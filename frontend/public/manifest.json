@@ -1,0 +1,22 @@
+{
+  "short_name": "StudyBook",
+  "name": "StudyBook — Learn • Focus • Achieve",
+  "icons": [
+    {
+      "src": "https://customer-assets-eiarnc6j.emergentagent.net/job_leaderbook-study/artifacts/8fbe1ch1_image.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "https://customer-assets-eiarnc6j.emergentagent.net/job_leaderbook-study/artifacts/8fbe1ch1_image.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    }
+  ],
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#0F1B4C",
+  "background_color": "#F8FAFC",
+  "orientation": "portrait-primary"
+}

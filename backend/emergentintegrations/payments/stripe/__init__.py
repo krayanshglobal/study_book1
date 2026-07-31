@@ -1,0 +1,1 @@
+# Mock stripe package

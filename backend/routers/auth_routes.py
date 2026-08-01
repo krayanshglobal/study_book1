@@ -10,6 +10,7 @@ from models import (
     LoginInput,
     ForgotPasswordInput,
     ResetPasswordInput,
+    ChangePasswordInput,
     now_iso,
 )
 from auth import (
@@ -252,6 +253,43 @@ async def reset_password(body: ResetPasswordInput):
         {"$set": {"password_hash": hash_password(body.password)}},
     )
     await db.password_reset_tokens.update_one({"token": body.token}, {"$set": {"used": True}})
+    return {"ok": True}
+
+
+@router.post("/change-password")
+async def change_password(body: ChangePasswordInput, user=Depends(get_current_user)):
+    """Allow an authenticated user to change their own password."""
+    from server import db
+
+    # Validate new password meets existing password rules
+    err = validate_password(body.new_password)
+    if err:
+        raise HTTPException(status_code=400, detail=err)
+
+    # Confirm the two new-password fields match
+    if body.new_password != body.confirm_password:
+        raise HTTPException(status_code=400, detail="New passwords do not match")
+
+    # Fetch the full user document (get_current_user strips password_hash)
+    uid_oid = _get_uid_oid(user)
+    db_user = await db.users.find_one({"_id": uid_oid})
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Verify the current password against the stored bcrypt hash
+    if not verify_password(body.current_password, db_user["password_hash"]):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+
+    # Prevent setting the same password again
+    if body.new_password == body.current_password:
+        raise HTTPException(status_code=400, detail="New password must differ from the current password")
+
+    # Update the stored bcrypt hash
+    await db.users.update_one(
+        {"_id": uid_oid},
+        {"$set": {"password_hash": hash_password(body.new_password)}},
+    )
+    logger.info(f"[change-password] user {user['_id']} changed their password")
     return {"ok": True}
 
 

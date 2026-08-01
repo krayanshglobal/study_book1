@@ -36,6 +36,12 @@ class ResetPasswordInput(BaseModel):
     password: str = Field(min_length=6)
 
 
+class ChangePasswordInput(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=6)
+    confirm_password: str
+
+
 class UserUpdateAdmin(BaseModel):
     """Admin-only user update: name, phone, class_level, role."""
     name: Optional[str] = None

@@ -12,8 +12,15 @@ GeneratedPluginRegistrant.java
 key.properties
 **/*.keystore
 **/*.jks
+/build/
+/app/build/
+*.apk
+*.aab
+# Flutter / Android generated files
 mobile/build/
-mobile/android/.gradle/
+mobile/android/build/
 mobile/android/app/build/
-mobile/android/app/*.apk
-mobile/android/app/*.aab
+
+# Generated Android packages
+*.apk
+*.aab

@@ -1,8 +1,11 @@
+import 'dart:convert';
+import 'package:dio/dio.dart' as dio;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/api/dio_client.dart';
@@ -10,6 +13,21 @@ import '../../../core/theme/app_colors.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../common/widgets/app_drawer.dart';
 import '../../common/widgets/shared_widgets.dart';
+
+ImageProvider? _getUserAvatarProvider(String? avatarUrl) {
+  if (avatarUrl == null || avatarUrl.trim().isEmpty) return null;
+  final trimmed = avatarUrl.trim();
+  if (trimmed.startsWith('data:image/')) {
+    try {
+      final base64Str = trimmed.split(',').last;
+      final bytes = base64Decode(base64Str);
+      return MemoryImage(bytes);
+    } catch (_) {
+      return null;
+    }
+  }
+  return NetworkImage(trimmed);
+}
 
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
@@ -22,6 +40,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   bool _editing = false;
   bool _saving = false;
   bool _requestingClass = false;
+  bool _uploadingPhoto = false;
 
   final _nameCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
@@ -30,9 +49,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   @override
   void initState() {
     super.initState();
-    // Refresh the user profile from the server every time the Profile screen
-    // is opened. This keeps the plan badge (Free / Premium) always in sync
-    // with the latest backend state without requiring a logout or restart.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(authProvider.notifier).refreshSilently();
     });
@@ -96,6 +112,103 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     }
   }
 
+  Future<void> _pickAndUploadPhoto() async {
+    final picker = ImagePicker();
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.photo_library_outlined, color: AppColors.blue),
+                title: Text('Choose from Gallery', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+                onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+              ),
+              ListTile(
+                leading: const Icon(Icons.camera_alt_outlined, color: AppColors.violet),
+                title: Text('Take a Photo', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+                onTap: () => Navigator.pop(ctx, ImageSource.camera),
+              ),
+              if (ref.read(authProvider).user?.avatarUrl?.isNotEmpty == true)
+                ListTile(
+                  leading: const Icon(Icons.delete_outline_rounded, color: AppColors.error),
+                  title: Text('Remove Photo', style: GoogleFonts.inter(fontWeight: FontWeight.w600, color: AppColors.error)),
+                  onTap: () async {
+                    Navigator.pop(ctx);
+                    await _removePhoto();
+                  },
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (source == null) return;
+
+    final picked = await picker.pickImage(source: source, imageQuality: 85);
+    if (picked == null) return;
+
+    final path = picked.path.toLowerCase();
+    final isJpgPng = path.endsWith('.jpg') || path.endsWith('.jpeg') || path.endsWith('.png');
+    final bytes = await picked.readAsBytes();
+
+    if (!isJpgPng || bytes.length > 2 * 1024 * 1024) {
+      if (mounted) {
+        showToast(
+          context,
+          'Profile picture must be JPG or PNG and less than 2 MB.',
+          isError: true,
+        );
+      }
+      return;
+    }
+
+    setState(() => _uploadingPhoto = true);
+    try {
+      final fileName = picked.name.isNotEmpty ? picked.name : 'avatar.jpg';
+      final mimeType = path.endsWith('.png') ? 'image/png' : 'image/jpeg';
+      final formData = dio.FormData.fromMap({
+        'file': dio.MultipartFile.fromBytes(
+          bytes,
+          filename: fileName,
+          contentType: dio.DioMediaType.parse(mimeType),
+        ),
+      });
+
+      await dioClient.post('/api/auth/profile/photo', data: formData);
+      await ref.read(authProvider.notifier).refresh();
+      if (mounted) {
+        showToast(context, 'Profile picture updated successfully!');
+      }
+    } catch (e) {
+      if (mounted) showToast(context, formatApiError(e), isError: true);
+    } finally {
+      if (mounted) setState(() => _uploadingPhoto = false);
+    }
+  }
+
+  Future<void> _removePhoto() async {
+    setState(() => _uploadingPhoto = true);
+    try {
+      await dioClient.delete('/api/auth/profile/photo');
+      await ref.read(authProvider.notifier).refresh();
+      if (mounted) {
+        showToast(context, 'Profile picture removed');
+      }
+    } catch (e) {
+      if (mounted) showToast(context, formatApiError(e), isError: true);
+    } finally {
+      if (mounted) setState(() => _uploadingPhoto = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(authProvider).user;
@@ -110,10 +223,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     }
 
     final initial = user.name.isNotEmpty ? user.name[0].toUpperCase() : 'U';
-    final planLabel =
-        user.subscriptionActive == true ? 'Premium Plan' : 'Free Plan';
+    final planLabel = user.isSuperAdmin
+        ? 'Super Admin'
+        : user.isAdmin
+            ? 'Admin'
+            : user.subscriptionActive == true
+                ? 'Premium Plan'
+                : 'Free Plan';
 
-    // Format joined date
     String memberSince = '—';
     try {
       if (user.createdAt != null) {
@@ -125,7 +242,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     return MainScaffold(
       title: 'Profile',
       showBack: true,
-      parentRoute: '/dashboard',
+      parentRoute: user.isAdmin ? '/admin' : '/dashboard',
       body: SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -135,13 +252,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               initial: initial,
               name: user.name,
               planLabel: planLabel,
+              avatarUrl: user.avatarUrl,
+              studentId: user.isAdmin ? null : user.studentId,
+              uploadingPhoto: _uploadingPhoto,
               onEdit: _openEdit,
+              onPhotoTap: _pickAndUploadPhoto,
             ),
 
             const SizedBox(height: 20),
 
             if (_editing)
-              // ── Edit form ────────────────────────────────────────────────
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: _EditForm(
@@ -159,7 +279,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 ),
               )
             else ...[
-              // ── User Information ─────────────────────────────────────────
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: _InfoCard(
@@ -172,32 +291,52 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         icon: Icons.mail_outline_rounded,
                         label: 'Email',
                         value: user.email),
+                    if (user.isAdmin)
+                      _InfoRow(
+                          icon: Icons.admin_panel_settings_outlined,
+                          label: 'Role',
+                          value: user.isSuperAdmin ? 'Super Admin' : 'Admin')
+                    else ...[
+                      if (user.studentId != null && user.studentId!.isNotEmpty)
+                        _InfoRow(
+                            icon: Icons.badge_outlined,
+                            label: 'Student ID',
+                            value: user.studentId!,
+                            isMono: true,
+                            isCopyable: true,
+                            copyValue: user.studentId),
+                      _InfoRow(
+                          icon: Icons.school_outlined,
+                          label: 'Class',
+                          value: user.classLevel != null ? 'Class ${user.classLevel}' : '—'),
+                    ],
                     _InfoRow(
                         icon: Icons.phone_outlined,
                         label: 'Phone',
                         value: user.phone ?? '—'),
-                    _InfoRow(
-                        icon: Icons.workspace_premium_outlined,
-                        label: 'Plan',
-                        value: planLabel),
+                    if (!user.isAdmin)
+                      _InfoRow(
+                          icon: Icons.workspace_premium_outlined,
+                          label: 'Plan',
+                          value: planLabel),
                     _InfoRow(
                         icon: Icons.calendar_today_outlined,
                         label: 'Member Since',
                         value: memberSince),
-                    _InfoRow(
-                        icon: Icons.star_outline_rounded,
-                        label: 'Referral Code',
-                        value: user.referralCode ?? '—',
-                        isMono: true,
-                        isCopyable: true,
-                        copyValue: user.referralCode),
+                    if (!user.isAdmin && user.referralCode != null)
+                      _InfoRow(
+                          icon: Icons.star_outline_rounded,
+                          label: 'Referral Code',
+                          value: user.referralCode!,
+                          isMono: true,
+                          isCopyable: true,
+                          copyValue: user.referralCode),
                   ],
                 ),
               ),
 
               const SizedBox(height: 24),
 
-              // ── Account section ──────────────────────────────────────────
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Column(
@@ -211,6 +350,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                           icon: Icons.person_outline_rounded,
                           label: 'Edit Profile',
                           onTap: _openEdit,
+                        ),
+                        _MenuItem(
+                          icon: Icons.camera_alt_outlined,
+                          label: 'Change Profile Picture',
+                          onTap: _pickAndUploadPhoto,
                         ),
                         _MenuItem(
                           icon: Icons.lock_outline_rounded,
@@ -241,7 +385,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
               const SizedBox(height: 24),
 
-              // ── App section ──────────────────────────────────────────────
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Column(
@@ -287,25 +430,31 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Profile Gradient Header
-// ─────────────────────────────────────────────────────────────────────────────
-
 class _ProfileHeader extends StatelessWidget {
   final String initial;
   final String name;
   final String planLabel;
+  final String? avatarUrl;
+  final String? studentId;
+  final bool uploadingPhoto;
   final VoidCallback onEdit;
+  final VoidCallback onPhotoTap;
 
   const _ProfileHeader({
     required this.initial,
     required this.name,
     required this.planLabel,
+    this.avatarUrl,
+    this.studentId,
+    this.uploadingPhoto = false,
     required this.onEdit,
+    required this.onPhotoTap,
   });
 
   @override
   Widget build(BuildContext context) {
+    final imageProvider = _getUserAvatarProvider(avatarUrl);
+
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
@@ -325,7 +474,6 @@ class _ProfileHeader extends StatelessWidget {
       child: Stack(
         clipBehavior: Clip.hardEdge,
         children: [
-          // Watermark graduation cap icon
           Positioned(
             right: -12,
             bottom: -16,
@@ -336,84 +484,139 @@ class _ProfileHeader extends StatelessWidget {
             ),
           ),
 
-          // Content
           Row(
             children: [
               // Avatar with edit button
-              Stack(
-                children: [
-                  Container(
-                    width: 72,
-                    height: 72,
-                    decoration: const BoxDecoration(
-                      color: AppColors.violet,
-                      shape: BoxShape.circle,
+              GestureDetector(
+                onTap: onPhotoTap,
+                child: Stack(
+                  children: [
+                    Container(
+                      width: 76,
+                      height: 76,
+                      decoration: BoxDecoration(
+                        color: AppColors.violet,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 3),
+                        image: imageProvider != null
+                            ? DecorationImage(
+                                image: imageProvider,
+                                fit: BoxFit.cover,
+                              )
+                            : null,
+                      ),
+                      child: imageProvider == null
+                          ? Center(
+                              child: Text(
+                                initial,
+                                style: GoogleFonts.inter(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 32,
+                                ),
+                              ),
+                            )
+                          : null,
                     ),
-                    child: Center(
-                      child: Text(
-                        initial,
-                        style: GoogleFonts.inter(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 30,
+                    if (uploadingPhoto)
+                      Positioned.fill(
+                        child: Container(
+                          decoration: const BoxDecoration(
+                            color: Colors.black45,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Center(
+                            child: SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
                         ),
                       ),
-                    ),
-                  ),
-                  // Edit pencil
-                  Positioned(
-                    right: 0,
-                    bottom: 0,
-                    child: GestureDetector(
-                      onTap: onEdit,
+                    Positioned(
+                      right: 0,
+                      bottom: 0,
                       child: Container(
-                        width: 24,
-                        height: 24,
-                        decoration: const BoxDecoration(
+                        width: 26,
+                        height: 26,
+                        decoration: BoxDecoration(
                           color: AppColors.blue,
                           shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 2),
                         ),
                         child: const Center(
-                          child: Icon(Icons.edit_rounded,
+                          child: Icon(Icons.camera_alt_rounded,
                               color: Colors.white, size: 13),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-              const SizedBox(width: 20),
+              const SizedBox(width: 18),
 
-              // Name + plan
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    name,
-                    style: GoogleFonts.inter(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 22,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: AppColors.blue,
-                      borderRadius: BorderRadius.circular(99),
-                    ),
-                    child: Text(
-                      planLabel,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
                       style: GoogleFonts.inter(
                         color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 20,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    if (studentId != null && studentId!.isNotEmpty)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 3),
+                        margin: const EdgeInsets.only(bottom: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withAlpha(25),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: Colors.white30),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.badge_outlined, size: 12, color: Colors.white70),
+                            const SizedBox(width: 4),
+                            Text(
+                              'ID: $studentId',
+                              style: GoogleFonts.jetBrainsMono(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: AppColors.blue,
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                      child: Text(
+                        planLabel,
+                        style: GoogleFonts.inter(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 11,
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ],
           ),
@@ -422,10 +625,6 @@ class _ProfileHeader extends StatelessWidget {
     );
   }
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Info Card (User Information section)
-// ─────────────────────────────────────────────────────────────────────────────
 
 class _InfoRow {
   final IconData icon;
@@ -541,10 +740,6 @@ class _InfoCard extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Section title
-// ─────────────────────────────────────────────────────────────────────────────
-
 class _SectionTitle extends StatelessWidget {
   final String label;
   const _SectionTitle({required this.label});
@@ -561,10 +756,6 @@ class _SectionTitle extends StatelessWidget {
     );
   }
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Menu card (Account / App sections)
-// ─────────────────────────────────────────────────────────────────────────────
 
 class _MenuItem {
   final IconData icon;
@@ -661,10 +852,6 @@ class _MenuCard extends StatelessWidget {
     );
   }
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Edit Form
-// ─────────────────────────────────────────────────────────────────────────────
 
 class _EditForm extends StatelessWidget {
   final TextEditingController nameCtrl;

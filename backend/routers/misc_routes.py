@@ -670,7 +670,7 @@ async def admin_delete_user(uid: str, admin=Depends(require_role("admin", "super
 async def admin_stats(class_level: Optional[str] = None, _=Depends(require_role("admin", "superadmin"))):
     from server import db
     q: dict = {}
-    if class_level:
+    if class_level and class_level != "all":
         q["class_level"] = class_level
     students = await db.users.count_documents({"role": "student", **q})
     questions = await db.questions.count_documents(q)
@@ -678,7 +678,25 @@ async def admin_stats(class_level: Optional[str] = None, _=Depends(require_role(
     videos = await db.videos.count_documents(q)
     active_subs = await db.users.count_documents({"role": "student", "subscription_active": True, **q})
     doubts = await db.discussion_threads.count_documents({"resolved": {"$ne": True}, **q})
-    if class_level:
+
+    # Calculate highest student referral count for selected class
+    highest_referrals = 0
+    top_referrer_name = ""
+    student_cursor = db.users.find({"role": "student", **q}, {"_id": 1, "name": 1})
+    student_map = {str(s["_id"]): s.get("name", "Student") async for s in student_cursor}
+
+    if student_map:
+        pipeline = [
+            {"$match": {"referrer_id": {"$in": list(student_map.keys())}}},
+            {"$group": {"_id": "$referrer_id", "count": {"$sum": 1}}},
+            {"$sort": {"count": -1}},
+            {"$limit": 1}
+        ]
+        async for r in db.referrals.aggregate(pipeline):
+            highest_referrals = r["count"]
+            top_referrer_name = student_map.get(r["_id"], "")
+
+    if class_level and class_level != "all":
         announcements = await db.announcements.count_documents({
             "$or": [
                 {"class_level": class_level},
@@ -704,6 +722,8 @@ async def admin_stats(class_level: Optional[str] = None, _=Depends(require_role(
         "class_requests": class_requests,
         "announcements": announcements,
         "doubts": doubts,
+        "highest_referrals": highest_referrals,
+        "top_referrer_name": top_referrer_name,
     }
 
 

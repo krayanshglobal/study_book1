@@ -2,13 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/intl.dart';
+
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/api/api_endpoints.dart';
 import '../../../core/api/dio_client.dart';
+import '../../../core/config/app_config.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../common/widgets/app_drawer.dart';
 import '../../common/widgets/shared_widgets.dart';
+import '../../videos/presentation/widgets/video_card.dart';
 
 class ExplorerScreen extends ConsumerStatefulWidget {
   const ExplorerScreen({super.key});
@@ -23,15 +28,26 @@ class _ExplorerScreenState extends ConsumerState<ExplorerScreen>
 
   // Filters
   final String _subject = 'maths';
-  final _topicController = TextEditingController(text: 'Algebra');
+  String? _selectedTopic; // null = "All Topics"
+  DateTime? _selectedDate; // null = "Select Date"
+  final _searchController = TextEditingController();
+  String _searchQuery = '';
+  List<Map> _topics = [];
 
-  // Content
-  List _notes = [];
-  List _videos = [];
-  List _tests = [];
-  List _discussions = [];
-  List _flashcards = [];
+  // Raw Content
+  List _rawNotes = [];
+  List _rawVideos = [];
+  List _rawTests = [];
+  List _rawDiscussions = [];
+  List _rawFlashcards = [];
   bool _flashcardsLocked = false;
+
+  // Filtered Content
+  List _filteredNotes = [];
+  List _filteredVideos = [];
+  List _filteredTests = [];
+  List _filteredDiscussions = [];
+  List _filteredFlashcards = [];
 
   // Flashcard state
   int _activeCardIndex = 0;
@@ -43,18 +59,20 @@ class _ExplorerScreenState extends ConsumerState<ExplorerScreen>
   final _replyController = TextEditingController();
 
   bool _loading = false;
+  bool _hasError = false;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 5, vsync: this);
+    _loadTopics();
     _fetchData();
   }
 
   @override
   void dispose() {
     _tabController.dispose();
-    _topicController.dispose();
+    _searchController.dispose();
     _replyController.dispose();
     super.dispose();
   }
@@ -72,53 +90,302 @@ class _ExplorerScreenState extends ConsumerState<ExplorerScreen>
     return _isAdmin || (user?.subscriptionActive ?? false);
   }
 
+  Future<void> _loadTopics() async {
+    try {
+      final r = await dioClient.get(
+        ApiEndpoints.topics,
+        queryParameters: {'class_level': _classLevel},
+      );
+      if (mounted) {
+        final topicList = List<Map>.from(r.data['topics'] ?? []);
+        setState(() {
+          _topics = topicList;
+        });
+      }
+    } catch (e) {
+      debugPrint('Study Explorer: Failed to load topics: $e');
+    }
+  }
+
   Future<void> _fetchData() async {
     if (!mounted) return;
-    setState(() => _loading = true);
-    try {
-      final cl = _classLevel;
-      final sub = _subject;
-      final top = _topicController.text.trim();
+    setState(() {
+      _loading = true;
+      _hasError = false;
+    });
 
+    final cl = _classLevel;
+    debugPrint('==================================================');
+    debugPrint('=== STUDY EXPLORER DEBUG LOG ===');
+    debugPrint('Logged-in User Class: $cl');
+    debugPrint('Selected Topic: $_selectedTopic');
+    debugPrint('Selected Date: $_selectedDate');
+    debugPrint('Search Query: "$_searchQuery"');
+
+    try {
       final results = await Future.wait([
-        dioClient.get(ApiEndpoints.notes,
-            queryParameters: {'class_level': cl, 'subject': sub, 'topic': top}),
+        dioClient.get(ApiEndpoints.notes, queryParameters: {'class_level': cl}),
         dioClient.get(ApiEndpoints.videos, queryParameters: {'class_level': cl}),
         dioClient.get(ApiEndpoints.tests, queryParameters: {'class_level': cl}),
-        dioClient.get(ApiEndpoints.discussions,
-            queryParameters: {'class_level': cl, 'subject': sub, 'topic': top}),
-        dioClient.get(ApiEndpoints.flashcards,
-            queryParameters: {'class_level': cl, 'subject': sub, 'topic': top}),
+        dioClient.get(ApiEndpoints.discussions, queryParameters: {'class_level': cl}),
+        dioClient.get(ApiEndpoints.flashcards, queryParameters: {'class_level': cl}),
+        dioClient.get(ApiEndpoints.questions, queryParameters: {'class_level': cl, 'limit': 100}),
       ]);
 
-      final allVideos = (results[1].data['items'] as List? ?? []);
-      final filteredVideos = allVideos.where((v) {
-        final vSub = (v['subject'] as String? ?? '').toLowerCase();
-        final vTop = (v['topic'] as String? ?? '').toLowerCase();
-        return vSub == sub.toLowerCase() && (top.isEmpty || vTop == top.toLowerCase());
-      }).toList();
+      debugPrint('GET ${ApiEndpoints.notes} Status: ${results[0].statusCode}, Records: ${(results[0].data['items'] as List?)?.length}');
+      debugPrint('GET ${ApiEndpoints.videos} Status: ${results[1].statusCode}, Records: ${(results[1].data['items'] as List?)?.length}');
+      debugPrint('GET ${ApiEndpoints.tests} Status: ${results[2].statusCode}, Records: ${(results[2].data['items'] as List?)?.length}');
+      debugPrint('GET ${ApiEndpoints.discussions} Status: ${results[3].statusCode}, Records: ${(results[3].data['items'] as List?)?.length}');
+      debugPrint('GET ${ApiEndpoints.flashcards} Status: ${results[4].statusCode}, Records: ${(results[4].data['items'] as List?)?.length}');
+      debugPrint('GET ${ApiEndpoints.questions} Status: ${results[5].statusCode}, Records: ${(results[5].data['items'] as List?)?.length}');
+      debugPrint('==================================================');
 
-      final allTests = (results[2].data['items'] as List? ?? []);
-      final filteredTests = allTests.where((t) {
-        final tSub = (t['subject'] as String? ?? '').toLowerCase();
-        return tSub == sub.toLowerCase() && (t['is_published'] == true);
-      }).toList();
+      final fetchedNotes = List<Map>.from(results[0].data['items'] ?? []);
+      final fetchedVideos = List<Map>.from(results[1].data['items'] ?? []);
+      final fetchedTests = List<Map>.from(results[2].data['items'] ?? []);
+      final fetchedDiscussions = List<Map>.from(results[3].data['items'] ?? []);
+      final fetchedFlashcards = List<Map>.from(results[4].data['items'] ?? []);
+      final fetchedQuestions = List<Map>.from(results[5].data['items'] ?? []);
+
+      // Requirement 3: If notes or flashcards are empty, derive content from fetched Question Bank questions
+      if (fetchedNotes.isEmpty && fetchedQuestions.isNotEmpty) {
+        for (var q in fetchedQuestions) {
+          final topic = q['topic']?.toString().trim() ?? 'General';
+          final subject = q['subject']?.toString().trim() ?? 'maths';
+          final qText = q['question_text']?.toString() ?? '';
+          final exp = q['explanation']?.toString() ?? '';
+          fetchedNotes.add({
+            '_id': q['_id'] ?? q['id'] ?? '',
+            'title': topic.isNotEmpty ? topic : 'Practice Note',
+            'content': '<b>Question:</b><br/>$qText${exp.isNotEmpty ? '<br/><br/><b>Explanation:</b><br/>$exp' : ''}',
+            'subject': subject,
+            'class_level': q['class_level'] ?? cl,
+            'topic': topic,
+            'created_at': q['created_at'] ?? q['published_at'],
+            'premium_only': false,
+          });
+        }
+      }
+
+      if (fetchedFlashcards.isEmpty && fetchedQuestions.isNotEmpty) {
+        for (var q in fetchedQuestions) {
+          final topic = q['topic']?.toString().trim() ?? 'General';
+          final qText = q['question_text']?.toString() ?? '';
+          final ans = q['correct_answer_text']?.toString() ?? q['explanation']?.toString() ?? 'Refer to study notes';
+          fetchedFlashcards.add({
+            '_id': q['_id'] ?? q['id'] ?? '',
+            'front': qText,
+            'back': ans,
+            'subject': q['subject'] ?? 'maths',
+            'class_level': q['class_level'] ?? cl,
+            'topic': topic,
+            'created_at': q['created_at'],
+          });
+        }
+      }
 
       if (!mounted) return;
       setState(() {
-        _notes = results[0].data['items'] ?? [];
-        _videos = filteredVideos;
-        _tests = filteredTests;
-        _discussions = results[3].data['items'] ?? [];
+        _rawNotes = fetchedNotes;
+        _rawVideos = fetchedVideos;
+        _rawTests = fetchedTests;
+        _rawDiscussions = fetchedDiscussions;
         _flashcardsLocked = results[4].data['locked'] == true;
-        _flashcards = results[4].data['items'] ?? [];
-        _activeCardIndex = 0;
-        _isFlipped = false;
+        _rawFlashcards = fetchedFlashcards;
         _loading = false;
       });
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
-      if (mounted) showToast(context, 'Failed to load study explorer contents.', isError: true);
+      _applyFilters();
+    } catch (e) {
+      debugPrint('Study Explorer: API Fetch Error: $e');
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _hasError = true;
+        });
+        showToast(context, 'Unable to load content.', isError: true);
+      }
+    }
+  }
+
+  void _applyFilters() {
+    final sub = _subject.toLowerCase();
+    final top = _selectedTopic?.trim().toLowerCase();
+    final search = _searchQuery.trim().toLowerCase();
+    final dateStr = _selectedDate != null ? DateFormat('yyyy-MM-dd').format(_selectedDate!) : null;
+
+    bool matchTopic(dynamic item) {
+      if (top == null || top.isEmpty || top == 'all topics') return true;
+      final itemTopic = (item['topic'] as String? ?? '').toLowerCase().trim();
+      return itemTopic == top;
+    }
+
+    bool matchDate(dynamic item) {
+      if (dateStr == null) return true;
+      final rawDate = item['scheduled_date'] ?? item['created_at'] ?? item['published_at'] ?? item['date'];
+      if (rawDate == null) return false;
+      return rawDate.toString().startsWith(dateStr);
+    }
+
+    bool matchSearch(dynamic item, List<String> fields) {
+      if (search.isEmpty) return true;
+      for (final f in fields) {
+        final val = (item[f] as String? ?? '').toLowerCase();
+        if (val.contains(search)) return true;
+      }
+      return false;
+    }
+
+    setState(() {
+      _filteredNotes = _rawNotes.where((n) {
+        final nSub = (n['subject'] as String? ?? '').toLowerCase();
+        return (nSub.isEmpty || nSub == sub) &&
+            matchTopic(n) &&
+            matchDate(n) &&
+            matchSearch(n, ['title', 'content', 'topic', 'subject', 'chapter', 'description', 'question_text']);
+      }).toList();
+
+      _filteredVideos = _rawVideos.where((v) {
+        final vSub = (v['subject'] as String? ?? '').toLowerCase();
+        return (vSub.isEmpty || vSub == sub) &&
+            matchTopic(v) &&
+            matchDate(v) &&
+            matchSearch(v, ['title', 'description', 'subject', 'topic']);
+      }).toList();
+
+      _filteredTests = _rawTests.where((t) {
+        final tSub = (t['subject'] as String? ?? '').toLowerCase();
+        final isPub = t['is_published'] == true;
+        return isPub &&
+            (tSub.isEmpty || tSub == sub) &&
+            matchTopic(t) &&
+            matchDate(t) &&
+            matchSearch(t, ['title', 'description', 'test_type', 'subject']);
+      }).toList();
+
+      _filteredDiscussions = _rawDiscussions.where((d) {
+        final dSub = (d['subject'] as String? ?? '').toLowerCase();
+        return (dSub.isEmpty || dSub == sub) &&
+            matchTopic(d) &&
+            matchDate(d) &&
+            matchSearch(d, ['title', 'body', 'user_name', 'topic']);
+      }).toList();
+
+      _filteredFlashcards = _rawFlashcards.where((f) {
+        final fSub = (f['subject'] as String? ?? '').toLowerCase();
+        return (fSub.isEmpty || fSub == sub) &&
+            matchTopic(f) &&
+            matchDate(f) &&
+            matchSearch(f, ['front', 'back', 'topic']);
+      }).toList();
+
+      _activeCardIndex = 0;
+      _isFlipped = false;
+    });
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate ?? DateTime.now(),
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2030),
+    );
+    if (picked != null) {
+      setState(() => _selectedDate = picked);
+      _applyFilters();
+    }
+  }
+
+  void _openVideo(Map v) async {
+    final bool isLocked = (v['premium_only'] == true) && !_isPremium;
+    if (isLocked) {
+      showToast(context, 'Premium subscription required to unlock this video', isError: true);
+      return;
+    }
+
+    String rawUrl = (v['url'] ?? v['video_url'] ?? v['videoUrl'] ?? v['youtube_url'] ?? v['videoLink'] ?? '').toString().trim();
+
+    debugPrint('==================================================');
+    debugPrint('=== VIDEO LAUNCH DEBUG LOG ===');
+    debugPrint('VIDEO TITLE: ${v['title']}');
+    debugPrint('RAW VIDEO URL: "$rawUrl"');
+
+    if (rawUrl.isEmpty) {
+      debugPrint('ERROR: Video URL is null or empty');
+      showToast(context, 'Video is currently unavailable.', isError: true);
+      return;
+    }
+
+    if (rawUrl.startsWith('/')) {
+      rawUrl = '${AppConfig.baseUrl}$rawUrl';
+      debugPrint('RESOLVED RELATIVE URL: "$rawUrl"');
+    }
+
+    final uri = Uri.tryParse(rawUrl);
+    debugPrint('PARSED URI: $uri');
+
+    if (uri == null || !uri.hasScheme || !(uri.scheme == 'http' || uri.scheme == 'https')) {
+      debugPrint('ERROR: Invalid URI or scheme: ${uri?.scheme}');
+      showToast(context, 'Video link is invalid.', isError: true);
+      return;
+    }
+
+    try {
+      bool launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!launched) {
+        debugPrint('LaunchMode.externalApplication returned false, trying LaunchMode.platformDefault...');
+        launched = await launchUrl(uri, mode: LaunchMode.platformDefault);
+      }
+      if (!launched) {
+        if (mounted) showToast(context, 'Unable to open this video. Please try again.', isError: true);
+      }
+    } catch (e) {
+      debugPrint('Video Launch Exception: $e');
+      try {
+        final fallbackLaunched = await launchUrl(uri, mode: LaunchMode.platformDefault);
+        if (!fallbackLaunched && mounted) {
+          showToast(context, 'Unable to open this video. Please try again.', isError: true);
+        }
+      } catch (_) {
+        if (mounted) showToast(context, 'Unable to open this video. Please try again.', isError: true);
+      }
+    }
+  }
+
+  void _resetFilters() {
+    setState(() {
+      _selectedTopic = null;
+      _selectedDate = null;
+      _searchController.clear();
+      _searchQuery = '';
+    });
+    _applyFilters();
+  }
+
+  String _getEmptyMessage(String contentType) {
+    if (_searchQuery.trim().isNotEmpty) {
+      return "No results found for '${_searchController.text.trim()}'.";
+    }
+    if (_selectedTopic != null && _selectedTopic!.isNotEmpty && _selectedTopic != 'All Topics') {
+      return "No $contentType found for $_selectedTopic.";
+    }
+    if (_selectedDate != null) {
+      final formattedDate = DateFormat('dd MMM yyyy').format(_selectedDate!);
+      return "No $contentType found for $formattedDate.";
+    }
+    switch (contentType) {
+      case 'notes':
+        return 'No study notes available.';
+      case 'flashcards':
+        return 'No flashcards created for this topic yet.';
+      case 'video lessons':
+        return 'No video lessons available for this topic.';
+      case 'mock tests':
+        return 'No mock tests published for this subject.';
+      case 'doubts':
+        return 'No doubts posted yet. Be the first to ask!';
+      default:
+        return 'No content available.';
     }
   }
 
@@ -264,7 +531,7 @@ class _ExplorerScreenState extends ConsumerState<ExplorerScreen>
                   'body': bodyCtrl.text.trim(),
                   'class_level': _classLevel,
                   'subject': _subject,
-                  'topic': _topicController.text.trim(),
+                  'topic': _selectedTopic ?? '',
                 });
                 if (ctx.mounted) Navigator.pop(ctx);
                 if (mounted) showToast(context, 'Doubt posted successfully!');
@@ -319,7 +586,7 @@ class _ExplorerScreenState extends ConsumerState<ExplorerScreen>
                 await dioClient.post(ApiEndpoints.flashcards, data: {
                   'subject': _subject,
                   'class_level': _classLevel,
-                  'topic': _topicController.text.trim(),
+                  'topic': _selectedTopic ?? '',
                   'front': frontCtrl.text.trim(),
                   'back': backCtrl.text.trim(),
                 });
@@ -524,45 +791,156 @@ class _ExplorerScreenState extends ConsumerState<ExplorerScreen>
         children: [
           // Filter bar
           Container(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
             color: AppColors.white,
-            child: Row(
+            child: Column(
               children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                  decoration: BoxDecoration(
-                    color: AppColors.navy,
-                    borderRadius: BorderRadius.circular(99),
-                  ),
-                  child: Text('Mathematics',
-                      style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white)),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: TextField(
-                    controller: _topicController,
-                    style: GoogleFonts.inter(fontSize: 13),
-                    decoration: InputDecoration(
-                      hintText: 'Topic/Chapter…',
-                      hintStyle: GoogleFonts.inter(fontSize: 13, color: AppColors.slate400),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                      border: OutlineInputBorder(
+                Row(
+                  children: [
+                    // Date selector button
+                    Expanded(
+                      flex: 4,
+                      child: InkWell(
+                        onTap: _pickDate,
                         borderRadius: BorderRadius.circular(99),
-                        borderSide: const BorderSide(color: AppColors.slate200),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(99),
-                        borderSide: const BorderSide(color: AppColors.slate200),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                          decoration: BoxDecoration(
+                            color: AppColors.white,
+                            borderRadius: BorderRadius.circular(99),
+                            border: Border.all(
+                              color: _selectedDate != null ? AppColors.blue : AppColors.slate200,
+                              width: _selectedDate != null ? 1.5 : 1.0,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.calendar_today,
+                                  size: 14,
+                                  color: _selectedDate != null ? AppColors.blue : AppColors.slate400),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  _selectedDate != null
+                                      ? DateFormat('dd MMM yyyy').format(_selectedDate!)
+                                      : 'Select Date',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    color: _selectedDate != null ? AppColors.navy : AppColors.slate500,
+                                    fontWeight: _selectedDate != null ? FontWeight.w600 : FontWeight.normal,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              if (_selectedDate != null)
+                                GestureDetector(
+                                  onTap: () {
+                                    setState(() => _selectedDate = null);
+                                    _applyFilters();
+                                  },
+                                  child: const Icon(Icons.close, size: 14, color: AppColors.slate500),
+                                ),
+                            ],
+                          ),
+                        ),
                       ),
                     ),
-                    onSubmitted: (_) => _fetchData(),
-                    textInputAction: TextInputAction.search,
-                  ),
+                    const SizedBox(width: 8),
+                    // Topic selector dropdown
+                    Expanded(
+                      flex: 5,
+                      child: DropdownButtonFormField<String>(
+                        initialValue: _selectedTopic,
+                        isExpanded: true,
+                        decoration: InputDecoration(
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(99),
+                            borderSide: const BorderSide(color: AppColors.slate200),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(99),
+                            borderSide: const BorderSide(color: AppColors.slate200),
+                          ),
+                          isDense: true,
+                        ),
+                        hint: Text('All Topics',
+                            style: GoogleFonts.inter(fontSize: 12, color: AppColors.slate500)),
+                        items: [
+                          DropdownMenuItem<String>(
+                            value: null,
+                            child: Text('All Topics',
+                                style: GoogleFonts.inter(fontSize: 12, color: AppColors.navy)),
+                          ),
+                          ..._topics.map((t) {
+                            final topicName = t['topic'] as String;
+                            return DropdownMenuItem<String>(
+                              value: topicName,
+                              child: Text(topicName,
+                                  style: GoogleFonts.inter(fontSize: 12, color: AppColors.navy),
+                                  overflow: TextOverflow.ellipsis),
+                            );
+                          }),
+                        ],
+                        onChanged: (v) {
+                          setState(() => _selectedTopic = v);
+                          _applyFilters();
+                        },
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                IconButton(
-                  icon: const Icon(Icons.search, color: AppColors.navy),
-                  onPressed: _fetchData,
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _searchController,
+                        style: GoogleFonts.inter(fontSize: 13),
+                        decoration: InputDecoration(
+                          hintText: 'Search topic, title or keyword…',
+                          hintStyle: GoogleFonts.inter(fontSize: 12, color: AppColors.slate400),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                          prefixIcon: const Icon(Icons.search, size: 18, color: AppColors.navy),
+                          suffixIcon: _searchController.text.isNotEmpty
+                              ? IconButton(
+                                  icon: const Icon(Icons.clear, size: 16, color: AppColors.slate400),
+                                  onPressed: () {
+                                    _searchController.clear();
+                                    setState(() => _searchQuery = '');
+                                    _applyFilters();
+                                  },
+                                )
+                              : null,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(99),
+                            borderSide: const BorderSide(color: AppColors.slate200),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(99),
+                            borderSide: const BorderSide(color: AppColors.slate200),
+                          ),
+                        ),
+                        onChanged: (val) {
+                          setState(() => _searchQuery = val);
+                          _applyFilters();
+                        },
+                        onSubmitted: (val) {
+                          setState(() => _searchQuery = val);
+                          _applyFilters();
+                        },
+                        textInputAction: TextInputAction.search,
+                      ),
+                    ),
+                    if (_selectedTopic != null || _selectedDate != null || _searchQuery.isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      TextButton.icon(
+                        onPressed: _resetFilters,
+                        icon: const Icon(Icons.restart_alt, size: 16, color: AppColors.slate600),
+                        label: Text('Clear', style: GoogleFonts.inter(fontSize: 12, color: AppColors.slate600)),
+                      ),
+                    ],
+                  ],
                 ),
               ],
             ),
@@ -590,42 +968,76 @@ class _ExplorerScreenState extends ConsumerState<ExplorerScreen>
           Expanded(
             child: _loading
                 ? const LoadingIndicator()
-                : TabBarView(
-                    controller: _tabController,
-                    children: [
-                      _NotesTab(notes: _notes, onTap: _showNoteDialog),
-                      _FlashcardsTab(
-                        flashcards: _flashcards,
-                        locked: _flashcardsLocked,
-                        isPremium: _isPremium,
-                        isAdmin: _isAdmin,
-                        activeIndex: _activeCardIndex,
-                        isFlipped: _isFlipped,
-                        onFlip: () => setState(() => _isFlipped = !_isFlipped),
-                        onPrev: () => setState(() {
-                          _isFlipped = false;
-                          _activeCardIndex = (_activeCardIndex - 1 + _flashcards.length) % _flashcards.length;
-                        }),
-                        onNext: () => setState(() {
-                          _isFlipped = false;
-                          _activeCardIndex = (_activeCardIndex + 1) % _flashcards.length;
-                        }),
-                        onDelete: (fid) => _deleteFlashcard(fid),
-                        onAddCard: _isAdmin ? _showAddFlashcardDialog : null,
-                        onUpgrade: () => context.push('/pricing'),
+                : _hasError
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.error_outline, size: 44, color: AppColors.error),
+                            const SizedBox(height: 12),
+                            Text('Unable to load content.',
+                                style: GoogleFonts.inter(fontSize: 14, color: AppColors.slate700)),
+                            const SizedBox(height: 16),
+                            ElevatedButton(
+                              onPressed: () {
+                                _loadTopics();
+                                _fetchData();
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.navy,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(99)),
+                              ),
+                              child: Text('Retry', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600)),
+                            ),
+                          ],
+                        ),
+                      )
+                    : TabBarView(
+                        controller: _tabController,
+                        children: [
+                          _NotesTab(notes: _filteredNotes, emptyMessage: _getEmptyMessage('notes'), onTap: _showNoteDialog),
+                          _FlashcardsTab(
+                            flashcards: _filteredFlashcards,
+                            emptyMessage: _getEmptyMessage('flashcards'),
+                            locked: _flashcardsLocked,
+                            isPremium: _isPremium,
+                            isAdmin: _isAdmin,
+                            activeIndex: _activeCardIndex,
+                            isFlipped: _isFlipped,
+                            onFlip: () => setState(() => _isFlipped = !_isFlipped),
+                            onPrev: () => setState(() {
+                              _isFlipped = false;
+                              _activeCardIndex = (_activeCardIndex - 1 + _filteredFlashcards.length) % _filteredFlashcards.length;
+                            }),
+                            onNext: () => setState(() {
+                              _isFlipped = false;
+                              _activeCardIndex = (_activeCardIndex + 1) % _filteredFlashcards.length;
+                            }),
+                            onDelete: (fid) => _deleteFlashcard(fid),
+                            onAddCard: _isAdmin ? _showAddFlashcardDialog : null,
+                            onUpgrade: () => context.push('/pricing'),
+                          ),
+                          _VideosTab(
+                            videos: _filteredVideos,
+                            emptyMessage: _getEmptyMessage('video lessons'),
+                            isPremium: _isPremium,
+                            isAdmin: _isAdmin,
+                            userClass: _classLevel,
+                            onOpenVideo: (v) => _openVideo(v),
+                            onResetFilters: _resetFilters,
+                          ),
+                          _TestsTab(tests: _filteredTests, emptyMessage: _getEmptyMessage('mock tests'), isPremium: _isPremium),
+                          _DoubtsTab(
+                            discussions: _filteredDiscussions,
+                            emptyMessage: _getEmptyMessage('doubts'),
+                            userId: ref.watch(authProvider).user?.id ?? '',
+                            isAdmin: _isAdmin,
+                            onViewThread: (tid) => _viewThread(tid),
+                            onDeleteThread: (tid) => _deleteThread(tid),
+                            onAskDoubt: _showCreateThreadDialog,
+                          ),
+                        ],
                       ),
-                      _VideosTab(videos: _videos),
-                      _TestsTab(tests: _tests, isPremium: _isPremium),
-                      _DoubtsTab(
-                        discussions: _discussions,
-                        userId: ref.watch(authProvider).user?.id ?? '',
-                        isAdmin: _isAdmin,
-                        onViewThread: (tid) => _viewThread(tid),
-                        onDeleteThread: (tid) => _deleteThread(tid),
-                        onAskDoubt: _showCreateThreadDialog,
-                      ),
-                    ],
-                  ),
           ),
         ],
       ),
@@ -636,13 +1048,14 @@ class _ExplorerScreenState extends ConsumerState<ExplorerScreen>
 // Notes Tab
 class _NotesTab extends StatelessWidget {
   final List notes;
+  final String emptyMessage;
   final Function(Map) onTap;
-  const _NotesTab({required this.notes, required this.onTap});
+  const _NotesTab({required this.notes, required this.emptyMessage, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     if (notes.isEmpty) {
-      return const _Empty('No study notes available for this topic.');
+      return _Empty(emptyMessage);
     }
     return ListView.separated(
       padding: const EdgeInsets.all(16),
@@ -742,6 +1155,7 @@ class _NotesTab extends StatelessWidget {
 // Flashcards Tab
 class _FlashcardsTab extends StatelessWidget {
   final List flashcards;
+  final String emptyMessage;
   final bool locked;
   final bool isPremium;
   final bool isAdmin;
@@ -756,6 +1170,7 @@ class _FlashcardsTab extends StatelessWidget {
 
   const _FlashcardsTab({
     required this.flashcards,
+    required this.emptyMessage,
     required this.locked,
     required this.isPremium,
     required this.isAdmin,
@@ -792,7 +1207,7 @@ class _FlashcardsTab extends StatelessWidget {
           if (locked)
             _PremiumLock(onUpgrade: onUpgrade)
           else if (flashcards.isEmpty)
-            const _Empty('No flashcards created for this topic yet.')
+            _Empty(emptyMessage)
           else ...[
             GestureDetector(
               onTap: onFlip,
@@ -881,80 +1296,279 @@ class _FlashcardsTab extends StatelessWidget {
 }
 
 // Videos Tab
-class _VideosTab extends StatelessWidget {
+class _VideosTab extends StatefulWidget {
   final List videos;
-  const _VideosTab({required this.videos});
+  final String emptyMessage;
+  final bool isPremium;
+  final bool isAdmin;
+  final String userClass;
+  final Function(Map) onOpenVideo;
+  final VoidCallback onResetFilters;
+
+  const _VideosTab({
+    required this.videos,
+    required this.emptyMessage,
+    required this.isPremium,
+    required this.isAdmin,
+    required this.userClass,
+    required this.onOpenVideo,
+    required this.onResetFilters,
+  });
+
+  @override
+  State<_VideosTab> createState() => _VideosTabState();
+}
+
+class _VideosTabState extends State<_VideosTab> {
+  String? _selectedChapter;
+  String _sortOption = 'Latest';
 
   @override
   Widget build(BuildContext context) {
-    if (videos.isEmpty) return const _Empty('No video lessons available for this topic.');
-    return ListView.separated(
-      padding: const EdgeInsets.all(16),
-      itemCount: videos.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 12),
-      itemBuilder: (_, i) {
-        final v = videos[i];
-        return Container(
-          decoration: BoxDecoration(
-            color: AppColors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: AppColors.slate100),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                height: 140,
-                decoration: const BoxDecoration(
-                  color: AppColors.navy,
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-                ),
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    const Icon(Icons.play_circle_outline, size: 48, color: Colors.white),
-                    if (v['premium_only'] == true)
-                      Positioned(
-                        top: 8, right: 8,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF59E0B),
-                            borderRadius: BorderRadius.circular(99),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(Icons.lock, size: 10, color: Colors.white),
-                              const SizedBox(width: 2),
-                              Text('Premium', style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w800, color: Colors.white)),
-                            ],
-                          ),
+    // Collect distinct chapters from videos
+    final chapters = <String>{};
+    for (var v in widget.videos) {
+      final topic = v['topic']?.toString().trim();
+      if (topic != null && topic.isNotEmpty) {
+        chapters.add(topic);
+      }
+    }
+
+    // Apply secondary chapter filter
+    List filtered = widget.videos.where((v) {
+      if (_selectedChapter != null && _selectedChapter!.isNotEmpty && _selectedChapter != 'All Chapters') {
+        final top = v['topic']?.toString().trim() ?? '';
+        if (top != _selectedChapter) return false;
+      }
+      return true;
+    }).toList();
+
+    // Sorting
+    filtered.sort((a, b) {
+      if (_sortOption == 'Oldest') {
+        final dA = a['created_at']?.toString() ?? '';
+        final dB = b['created_at']?.toString() ?? '';
+        return dA.compareTo(dB);
+      } else if (_sortOption == 'Alphabetical') {
+        final tA = a['title']?.toString() ?? '';
+        final tB = b['title']?.toString() ?? '';
+        return tA.compareTo(tB);
+      } else if (_sortOption == 'Most Viewed') {
+        final vA = (a['views'] ?? a['view_count'] ?? 0) as num;
+        final vB = (b['views'] ?? b['view_count'] ?? 0) as num;
+        return vB.compareTo(vA);
+      } else {
+        // Latest (Default)
+        final dA = a['created_at']?.toString() ?? '';
+        final dB = b['created_at']?.toString() ?? '';
+        return dB.compareTo(dA);
+      }
+    });
+
+    return Column(
+      children: [
+        // Secondary Filter Bar matching reference image
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          color: AppColors.white,
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                // Class selector pill
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: AppColors.blue.withAlpha(12),
+                    borderRadius: BorderRadius.circular(99),
+                    border: Border.all(color: AppColors.blue.withAlpha(50)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.school_outlined, size: 14, color: AppColors.blue),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Class ${widget.userClass}',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.blue,
                         ),
                       ),
-                  ],
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.all(14),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(v['title'] ?? '',
-                        style: GoogleFonts.fraunces(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.navy),
-                        maxLines: 1, overflow: TextOverflow.ellipsis),
-                    if ((v['description'] as String?)?.isNotEmpty == true) ...[
-                      const SizedBox(height: 4),
-                      Text(v['description'] ?? '',
-                          style: GoogleFonts.inter(fontSize: 12, color: AppColors.slate500),
-                          maxLines: 2, overflow: TextOverflow.ellipsis),
                     ],
-                  ],
+                  ),
                 ),
-              ),
-            ],
+                const SizedBox(width: 8),
+
+                // Chapter selector dropdown pill
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: AppColors.white,
+                    borderRadius: BorderRadius.circular(99),
+                    border: Border.all(
+                      color: _selectedChapter != null ? AppColors.blue : AppColors.slate300,
+                      width: _selectedChapter != null ? 1.5 : 1.0,
+                    ),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: _selectedChapter,
+                      hint: Text(
+                        'All Chapters',
+                        style: GoogleFonts.inter(fontSize: 12, color: AppColors.navy, fontWeight: FontWeight.w600),
+                      ),
+                      icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 18, color: AppColors.navy),
+                      isDense: true,
+                      style: GoogleFonts.inter(fontSize: 12, color: AppColors.navy),
+                      items: [
+                        DropdownMenuItem<String>(
+                          value: null,
+                          child: Text('All Chapters', style: GoogleFonts.inter(fontSize: 12, color: AppColors.navy)),
+                        ),
+                        ...chapters.map((ch) {
+                          return DropdownMenuItem<String>(
+                            value: ch,
+                            child: Text(
+                              ch,
+                              style: GoogleFonts.inter(fontSize: 12, color: AppColors.navy),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          );
+                        }),
+                      ],
+                      onChanged: (val) {
+                        setState(() => _selectedChapter = val);
+                      },
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+
+                // Sort option pill
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: AppColors.white,
+                    borderRadius: BorderRadius.circular(99),
+                    border: Border.all(color: AppColors.slate300),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: _sortOption,
+                      icon: const Icon(Icons.tune_rounded, size: 14, color: AppColors.navy),
+                      isDense: true,
+                      style: GoogleFonts.inter(fontSize: 12, color: AppColors.navy, fontWeight: FontWeight.w600),
+                      items: const [
+                        DropdownMenuItem(value: 'Latest', child: Text('Sort: Latest')),
+                        DropdownMenuItem(value: 'Oldest', child: Text('Sort: Oldest')),
+                        DropdownMenuItem(value: 'Most Viewed', child: Text('Sort: Most Viewed')),
+                        DropdownMenuItem(value: 'Alphabetical', child: Text('Sort: A-Z')),
+                      ],
+                      onChanged: (val) {
+                        if (val != null) {
+                          setState(() => _sortOption = val);
+                        }
+                      },
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
-        );
-      },
+        ),
+        const Divider(height: 1, color: AppColors.slate200),
+
+        // Video list or Empty state
+        Expanded(
+          child: filtered.isEmpty
+              ? _EmptyVideos(
+                  message: widget.emptyMessage,
+                  onClear: () {
+                    setState(() {
+                      _selectedChapter = null;
+                      _sortOption = 'Latest';
+                    });
+                    widget.onResetFilters();
+                  },
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: filtered.length,
+                  itemBuilder: (ctx, i) {
+                    final v = filtered[i];
+                    final bool isLocked = (v['premium_only'] == true) && !widget.isPremium;
+                    return VideoCard(
+                      video: v,
+                      isLocked: isLocked,
+                      onTap: () => widget.onOpenVideo(v),
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+class _EmptyVideos extends StatelessWidget {
+  final String message;
+  final VoidCallback onClear;
+
+  const _EmptyVideos({
+    required this.message,
+    required this.onClear,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Container(
+        margin: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: AppColors.slate50,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AppColors.slate200),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                color: AppColors.blue.withAlpha(20),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.play_circle_outline, size: 28, color: AppColors.blue),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'No Videos Found',
+              style: GoogleFonts.fraunces(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.navy),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              message.isNotEmpty ? message : 'Try changing your filters or search keyword.',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(fontSize: 13, color: AppColors.slate500),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              onPressed: onClear,
+              icon: const Icon(Icons.restart_alt, size: 16),
+              label: Text('Clear Filters', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.navy,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(99)),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -962,12 +1576,13 @@ class _VideosTab extends StatelessWidget {
 // Tests Tab
 class _TestsTab extends StatelessWidget {
   final List tests;
+  final String emptyMessage;
   final bool isPremium;
-  const _TestsTab({required this.tests, required this.isPremium});
+  const _TestsTab({required this.tests, required this.emptyMessage, required this.isPremium});
 
   @override
   Widget build(BuildContext context) {
-    if (tests.isEmpty) return const _Empty('No mock tests published for this subject.');
+    if (tests.isEmpty) return _Empty(emptyMessage);
     return ListView.separated(
       padding: const EdgeInsets.all(16),
       itemCount: tests.length,
@@ -1064,6 +1679,7 @@ class _TestsTab extends StatelessWidget {
 // Doubts Tab
 class _DoubtsTab extends StatelessWidget {
   final List discussions;
+  final String emptyMessage;
   final String userId;
   final bool isAdmin;
   final Function(String) onViewThread;
@@ -1072,6 +1688,7 @@ class _DoubtsTab extends StatelessWidget {
 
   const _DoubtsTab({
     required this.discussions,
+    required this.emptyMessage,
     required this.userId,
     required this.isAdmin,
     required this.onViewThread,
@@ -1105,7 +1722,7 @@ class _DoubtsTab extends StatelessWidget {
         ),
         Expanded(
           child: discussions.isEmpty
-              ? const _Empty('No doubts posted yet. Be the first to ask!')
+              ? _Empty(emptyMessage)
               : ListView.separated(
                   padding: const EdgeInsets.all(16),
                   itemCount: discussions.length,

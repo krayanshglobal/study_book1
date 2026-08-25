@@ -1,9 +1,11 @@
 import 'package:dio/dio.dart';
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import '../config/app_config.dart';
+import '../services/storage_service.dart';
 
 late DioClient dioClient;
 
@@ -56,19 +58,72 @@ class DioClient {
       ),
     );
 
-    // Cookie manager — persists cookies across launches (access_token, refresh_token)
+    // Cookie manager — persists cookies across launches
     dio.interceptors.add(CookieManager(cookieJar));
 
     final client = DioClient._internal(dio, cookieJar);
 
-    // 401 Interceptor: matches React website api.js auto-redirect on session expiry
+    // Request & 401 Refresh Interceptor
     dio.interceptors.add(
       InterceptorsWrapper(
+        onRequest: (options, handler) async {
+          final token = await StorageService.getAccessToken();
+          if (token != null && token.isNotEmpty) {
+            options.headers['Authorization'] = 'Bearer $token';
+          }
+          return handler.next(options);
+        },
         onError: (error, handler) async {
           if (error.response?.statusCode == 401) {
             final path = error.requestOptions.path;
-            final isAuthCheck = path.contains('/login') || path.contains('/register') || path.contains('/me');
+            final isAuthCheck = path.contains('/login') ||
+                path.contains('/register') ||
+                path.contains('/refresh');
+
             if (!isAuthCheck) {
+              // Attempt to refresh access token using saved refresh token
+              final refreshToken = await StorageService.getRefreshToken();
+              if (refreshToken != null && refreshToken.isNotEmpty) {
+                try {
+                  final refreshDio = Dio(
+                    BaseOptions(
+                      baseUrl: AppConfig.baseUrl,
+                      connectTimeout: const Duration(seconds: 10),
+                      receiveTimeout: const Duration(seconds: 10),
+                    ),
+                  );
+
+                  final refreshResp = await refreshDio.post(
+                    '/api/auth/refresh',
+                    data: {'refresh_token': refreshToken},
+                    options: Options(
+                      headers: {'Authorization': 'Bearer $refreshToken'},
+                    ),
+                  );
+
+                  if (refreshResp.statusCode == 200) {
+                    final newAccess = refreshResp.data['access_token']?.toString();
+                    final newRefresh = refreshResp.data['refresh_token']?.toString();
+
+                    if (newAccess != null && newAccess.isNotEmpty) {
+                      await StorageService.saveTokens(
+                        accessToken: newAccess,
+                        refreshToken: newRefresh ?? refreshToken,
+                      );
+
+                      // Retry the original request with new access token
+                      error.requestOptions.headers['Authorization'] = 'Bearer $newAccess';
+                      final clonedRequest = await dio.fetch(error.requestOptions);
+                      return handler.resolve(clonedRequest);
+                    }
+                  }
+                } catch (e) {
+                  debugPrint('Token refresh failed: $e');
+                }
+              }
+
+              // Genuinely unauthenticated / expired -> clear session & trigger logout callback
+              await StorageService.clearSession();
               await client.clearCookies();
               client.onUnauthorized?.call();
             }

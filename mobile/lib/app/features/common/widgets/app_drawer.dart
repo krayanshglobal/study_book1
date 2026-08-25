@@ -155,6 +155,10 @@ class AppDrawer extends ConsumerWidget {
                       label: 'Overview',
                       route: '/admin'),
                   const _NavItem(
+                      icon: Icons.leaderboard_rounded,
+                      label: 'Leaderboard',
+                      route: '/admin/leaderboard'),
+                  const _NavItem(
                       icon: Icons.quiz_rounded,
                       label: 'Questions',
                       route: '/admin/questions'),

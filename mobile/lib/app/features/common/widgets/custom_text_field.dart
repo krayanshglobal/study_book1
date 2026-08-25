@@ -11,8 +11,10 @@ class CustomTextField extends StatelessWidget {
   final IconData? prefixIcon;
   final Widget? suffixIcon;
   final String? Function(String?)? validator;
+  final void Function(String)? onChanged;
   final int maxLines;
   final bool enabled;
+  final bool readOnly;
   final TextCapitalization textCapitalization;
 
   const CustomTextField({
@@ -25,8 +27,10 @@ class CustomTextField extends StatelessWidget {
     this.prefixIcon,
     this.suffixIcon,
     this.validator,
+    this.onChanged,
     this.maxLines = 1,
     this.enabled = true,
+    this.readOnly = false,
     this.textCapitalization = TextCapitalization.none,
   });
 
@@ -37,8 +41,10 @@ class CustomTextField extends StatelessWidget {
       obscureText: obscureText,
       keyboardType: keyboardType,
       validator: validator,
+      onChanged: onChanged,
       maxLines: maxLines,
       enabled: enabled,
+      readOnly: readOnly,
       textCapitalization: textCapitalization,
       style: const TextStyle(
         color: AppColors.navy,
@@ -52,7 +58,6 @@ class CustomTextField extends StatelessWidget {
             ? Icon(prefixIcon, size: 20, color: AppColors.slate400)
             : null,
         suffixIcon: suffixIcon,
-        // Focus state changes prefix icon color
         prefixIconColor: WidgetStateColor.resolveWith((states) {
           if (states.contains(WidgetState.focused)) return AppColors.blue;
           return AppColors.slate400;

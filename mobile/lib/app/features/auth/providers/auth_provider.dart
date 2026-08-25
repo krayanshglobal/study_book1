@@ -1,13 +1,14 @@
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/api/dio_client.dart';
 import '../../../core/models/user_model.dart';
 import '../../../core/services/auth_service.dart';
+import '../../../core/services/storage_service.dart';
 
 final dioClientProvider = Provider<DioClient>((ref) => dioClient);
 
 final authServiceProvider = Provider<AuthService>((ref) => AuthService());
 
-// Three-state: loading=true/user=null → loading; loading=false/user!=null → logged in; loading=false/user=null → logged out
 class AuthState {
   final UserModel? user;
   final bool isLoading;
@@ -31,18 +32,38 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   AuthNotifier(this._authService) : super(const AuthState(isLoading: true)) {
     dioClient.onUnauthorized = () {
+      StorageService.clearSession();
       state = const AuthState(user: null, isLoading: false);
     };
     checkAuthStatus();
   }
 
   Future<void> checkAuthStatus() async {
-    state = state.copyWith(isLoading: true, error: null);
+    // 1. Instantly restore saved user from secure storage if present
+    final savedUser = await StorageService.getSavedUser();
+    if (savedUser != null) {
+      state = AuthState(user: savedUser, isLoading: false);
+    } else {
+      state = state.copyWith(isLoading: true, error: null);
+    }
+
+    // 2. Validate session against backend in background
     try {
-      final user = await _authService.getCurrentUser();
-      state = AuthState(user: user, isLoading: false);
-    } catch (_) {
-      state = const AuthState(user: null, isLoading: false);
+      final freshUser = await _authService.getCurrentUser();
+      state = AuthState(user: freshUser, isLoading: false);
+    } catch (e) {
+      if (e is DioException && e.response?.statusCode == 401) {
+        // Genuine 401 Unauthorized & refresh failed -> clear session
+        await StorageService.clearSession();
+        state = const AuthState(user: null, isLoading: false);
+      } else {
+        // Network error / offline -> keep saved user logged in
+        if (savedUser != null) {
+          state = AuthState(user: savedUser, isLoading: false);
+        } else {
+          state = const AuthState(user: null, isLoading: false);
+        }
+      }
     }
   }
 
@@ -58,6 +79,77 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
+  Future<bool> loginWithGoogle(
+    String idToken, {
+    String? classLevel,
+    String? referralCode,
+  }) async {
+    state = state.copyWith(isLoading: true, error: null);
+    try {
+      final user = await _authService.loginWithGoogle(
+        idToken,
+        classLevel: classLevel,
+        referralCode: referralCode,
+      );
+      state = AuthState(user: user, isLoading: false);
+      return true;
+    } catch (e) {
+      state = AuthState(isLoading: false, error: AuthService.formatError(e));
+      return false;
+    }
+  }
+
+  Future<Map<String, dynamic>?> sendMobileOtp(String phone) async {
+    state = state.copyWith(isLoading: true, error: null);
+    try {
+      final res = await _authService.sendMobileOtp(phone);
+      state = state.copyWith(isLoading: false);
+      return res;
+    } catch (e) {
+      state = AuthState(isLoading: false, error: AuthService.formatError(e));
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>?> verifyOtpForRegistration({
+    required String phone,
+    required String otp,
+  }) async {
+    state = state.copyWith(isLoading: true, error: null);
+    try {
+      final res = await _authService.verifyOtpForRegistration(phone: phone, otp: otp);
+      state = state.copyWith(isLoading: false);
+      return res;
+    } catch (e) {
+      state = AuthState(isLoading: false, error: AuthService.formatError(e));
+      return null;
+    }
+  }
+
+  Future<bool> verifyMobileOtp({
+    required String phone,
+    required String otp,
+    String? name,
+    String? classLevel,
+    String? referralCode,
+  }) async {
+    state = state.copyWith(isLoading: true, error: null);
+    try {
+      final user = await _authService.verifyMobileOtp(
+        phone: phone,
+        otp: otp,
+        name: name,
+        classLevel: classLevel,
+        referralCode: referralCode,
+      );
+      state = AuthState(user: user, isLoading: false);
+      return true;
+    } catch (e) {
+      state = AuthState(isLoading: false, error: AuthService.formatError(e));
+      return false;
+    }
+  }
+
   Future<bool> register({
     required String name,
     required String email,
@@ -65,12 +157,18 @@ class AuthNotifier extends StateNotifier<AuthState> {
     required String password,
     String? classLevel,
     String? referralCode,
+    String? verificationToken,
   }) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
       final user = await _authService.register(
-        name: name, email: email, phone: phone, password: password,
-        classLevel: classLevel, referralCode: referralCode,
+        name: name,
+        email: email,
+        phone: phone,
+        password: password,
+        classLevel: classLevel,
+        referralCode: referralCode,
+        verificationToken: verificationToken,
       );
       state = AuthState(user: user, isLoading: false);
       return true;
@@ -82,16 +180,12 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   Future<void> logout() async {
     await _authService.logout();
+    await StorageService.clearSession();
     state = const AuthState(user: null, isLoading: false);
   }
 
   Future<void> refresh() => checkAuthStatus();
 
-  /// Silently fetches the latest user profile from the server and updates
-  /// [state.user] WITHOUT touching [isLoading]. This means any screen that
-  /// is already displaying content will not flash a loading spinner, but
-  /// all widgets watching [authProvider] will automatically rebuild with the
-  /// latest subscription/plan data the moment the response arrives.
   Future<void> refreshSilently() async {
     if (!state.isAuthenticated) return;
     try {
@@ -100,7 +194,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
         state = state.copyWith(user: user, error: null);
       }
     } catch (_) {
-      // Network hiccup — keep existing cached user, do not sign out.
+      // Network hiccup — keep existing cached user
     }
   }
 }

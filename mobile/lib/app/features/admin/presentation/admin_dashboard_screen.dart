@@ -23,6 +23,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
   Map _stats = {};
   bool _loading = true;
   bool _cardLoading = false;
+  String? _errorMsg;
   AnimationController? _fadeController;
   Animation<double>? _fadeAnimation;
 
@@ -53,9 +54,15 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
 
   Future<void> _loadStats(String classLevel, {bool isInitial = false}) async {
     if (isInitial) {
-      setState(() => _loading = true);
+      setState(() {
+        _loading = true;
+        _errorMsg = null;
+      });
     } else {
-      setState(() => _cardLoading = true);
+      setState(() {
+        _cardLoading = true;
+        _errorMsg = null;
+      });
     }
 
     try {
@@ -94,6 +101,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
           _stats = statsData;
           _loading = false;
           _cardLoading = false;
+          _errorMsg = null;
         });
         _fadeController?.forward(from: 0.0);
       }
@@ -102,8 +110,8 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
         setState(() {
           _loading = false;
           _cardLoading = false;
+          _errorMsg = 'Unable to load dashboard data.';
         });
-        showToast(context, formatApiError(e), isError: true);
       }
     }
   }
@@ -112,10 +120,10 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
     final currentClass = ref.read(selectedAdminClassProvider);
     if (currentClass == lvl && !_cardLoading) return;
 
-    // 1. Instantly update single source of truth in Riverpod
+    // Instantly update single source of truth in Riverpod
     ref.read(selectedAdminClassProvider.notifier).state = lvl;
 
-    // 2. Immediately trigger dashboard refresh for newly selected class
+    // Immediately trigger dashboard refresh for newly selected class
     _loadStats(lvl);
   }
 
@@ -129,312 +137,495 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
       title: isSuperAdmin ? 'SuperAdmin Dashboard' : 'Admin Dashboard',
       body: _loading
           ? const LoadingIndicator()
-          : RefreshIndicator(
-              onRefresh: () => _loadStats(activeClass),
-              child: SingleChildScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      crossAxisAlignment: CrossAxisAlignment.center,
+          : _errorMsg != null
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('COMMAND CENTRE',
-                                style: GoogleFonts.inter(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w700,
-                                    letterSpacing: 2,
-                                    color: AppColors.violet)),
-                            const SizedBox(height: 4),
-                            Text(
-                              isSuperAdmin
-                                  ? 'SuperAdmin dashboard'
-                                  : 'Admin dashboard',
-                              style: GoogleFonts.fraunces(
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppColors.navy),
-                            ),
-                            const SizedBox(height: 2),
-                            Text('You control the entire StudyBook experience.',
-                                style: GoogleFonts.inter(
-                                    fontSize: 12, color: AppColors.slate500)),
-                          ],
+                        const Icon(Icons.error_outline_rounded, size: 48, color: AppColors.error),
+                        const SizedBox(height: 12),
+                        Text(
+                          _errorMsg!,
+                          style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.navy),
+                        ),
+                        const SizedBox(height: 16),
+                        ElevatedButton.icon(
+                          onPressed: () => _loadStats(activeClass, isInitial: true),
+                          icon: const Icon(Icons.refresh_rounded),
+                          label: const Text('Retry'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.blue,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 14),
-
-                    // Class switcher (Single Source of Truth)
-                    Row(
-                      children: ['8', '9', '10'].map((lvl) {
-                        final isSel = activeClass == lvl;
-                        return Padding(
-                          padding: const EdgeInsets.only(right: 8),
-                          child: ChoiceChip(
-                            label: Text(
-                              'Class $lvl',
-                              style: GoogleFonts.inter(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color:
-                                    isSel ? Colors.white : AppColors.slate700,
+                  ),
+                )
+              : RefreshIndicator(
+                  onRefresh: () => _loadStats(activeClass),
+                  child: SingleChildScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // COMMAND CENTRE TITLE SECTION
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: AppColors.violet.withAlpha(20),
+                                borderRadius: BorderRadius.circular(6),
                               ),
-                            ),
-                            selected: isSel,
-                            selectedColor: AppColors.navy,
-                            backgroundColor: AppColors.slate100,
-                            onSelected: (_) => _onClassSelected(lvl),
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                    const SizedBox(height: 20),
-
-                    // Fade-in animated Dashboard Tiles Container
-                    FadeTransition(
-                      opacity: _fadeAnimation ?? const AlwaysStoppedAnimation(1.0),
-                      child: GridView.count(
-                        crossAxisCount: 2,
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        crossAxisSpacing: 12,
-                        mainAxisSpacing: 12,
-                        childAspectRatio: 1.3,
-                        children: [
-                          _Tile(
-                            icon: Icons.quiz_outlined,
-                            label: 'Questions',
-                            val: '${_stats['questions'] ?? 0}',
-                            route: '/admin/questions',
-                            color: AppColors.blue,
-                            isLoading: _cardLoading,
-                          ),
-                          _Tile(
-                            icon: Icons.assignment_outlined,
-                            label: 'Tests',
-                            val: '${_stats['tests'] ?? 0}',
-                            route: '/admin/tests',
-                            color: AppColors.violet,
-                            isLoading: _cardLoading,
-                          ),
-                          _Tile(
-                            icon: Icons.play_circle_outline,
-                            label: 'Videos',
-                            val: '${_stats['videos'] ?? 0}',
-                            route: '/admin/videos',
-                            color: AppColors.navy,
-                            isLoading: _cardLoading,
-                          ),
-                          _Tile(
-                            icon: Icons.bar_chart_outlined,
-                            label: 'Analytics',
-                            val: '${_stats['attempts'] ?? 0}',
-                            route: '/admin/analytics',
-                            color: AppColors.violet,
-                            isLoading: _cardLoading,
-                          ),
-                          _Tile(
-                            icon: Icons.group_outlined,
-                            label: 'Students',
-                            val: '${_stats['students'] ?? 0}',
-                            route: '/admin/users',
-                            color: AppColors.blue,
-                            isLoading: _cardLoading,
-                          ),
-                          _Tile(
-                            icon: Icons.card_membership_outlined,
-                            label: 'Active subs',
-                            val: '${_stats['active_subs'] ?? 0}',
-                            route: '/admin/plans',
-                            color: AppColors.navy,
-                            isLoading: _cardLoading,
-                          ),
-                          _Tile(
-                            icon: Icons.security_outlined,
-                            label: 'Class Requests',
-                            val: '${_stats['class_requests'] ?? 0}',
-                            route: '/admin/class-requests',
-                            color: const Color(0xFFD97706),
-                            isLoading: _cardLoading,
-                          ),
-                          _Tile(
-                            icon: Icons.article_outlined,
-                            label: 'Notes',
-                            val: _stats.containsKey('notes')
-                                ? '${_stats['notes']}'
-                                : 'Manage',
-                            route: '/admin/notes',
-                            color: AppColors.violet,
-                            isLoading: _cardLoading,
-                          ),
-                          _Tile(
-                            icon: Icons.style_outlined,
-                            label: 'Flashcards',
-                            val: _stats.containsKey('flashcards')
-                                ? '${_stats['flashcards']}'
-                                : 'Manage',
-                            route: '/admin/flashcards',
-                            color: AppColors.blue,
-                            isLoading: _cardLoading,
-                          ),
-                          _Tile(
-                            icon: Icons.local_offer_outlined,
-                            label: 'Promos',
-                            val: _stats.containsKey('promos')
-                                ? '${_stats['promos']}'
-                                : 'Offers',
-                            route: '/admin/promos',
-                            color: const Color(0xFF059669),
-                            isLoading: _cardLoading,
-                          ),
-                        ],
-                      ),
-                    ),
-
-                    const SizedBox(height: 24),
-                    // Quick Actions Card
-                    Container(
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        color: AppColors.white,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: AppColors.slate200),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('QUICK ACTIONS',
-                              style: GoogleFonts.inter(
+                              child: Text(
+                                'COMMAND CENTRE',
+                                style: GoogleFonts.inter(
                                   fontSize: 10,
                                   fontWeight: FontWeight.w700,
                                   letterSpacing: 1.5,
-                                  color: AppColors.violet)),
-                          const SizedBox(height: 12),
-                          const _QuickAction(
-                              icon: Icons.add_circle_outline,
-                              text: 'Add a new question to the bank',
-                              route: '/admin/questions',
-                              color: AppColors.blue),
-                          const _QuickAction(
-                              icon: Icons.calendar_today_outlined,
-                              text: 'Schedule a Sunday mock test',
-                              route: '/admin/tests',
-                              color: AppColors.violet),
-                          const _QuickAction(
-                              icon: Icons.video_call_outlined,
-                              text: 'Publish a new video lesson',
-                              route: '/admin/videos',
-                              color: AppColors.blue),
-                          const _QuickAction(
-                              icon: Icons.card_giftcard_outlined,
-                              text: 'Create a premium plan',
-                              route: '/admin/plans',
-                              color: AppColors.violet),
-                          const _QuickAction(
-                              icon: Icons.campaign_outlined,
-                              text: 'Broadcast an announcement',
-                              route: '/admin/announcements',
-                              color: AppColors.navy),
-                          const _QuickAction(
-                              icon: Icons.security_outlined,
-                              text: 'Approve or reject class change requests',
-                              route: '/admin/class-requests',
-                              color: Color(0xFFD97706)),
-                          const _QuickAction(
-                              icon: Icons.article_outlined,
-                              text: 'Publish study notes',
-                              route: '/admin/notes',
-                              color: AppColors.violet),
-                          const _QuickAction(
-                              icon: Icons.style_outlined,
-                              text: 'Manage study flashcards',
-                              route: '/admin/flashcards',
-                              color: AppColors.blue),
-                          const _QuickAction(
-                              icon: Icons.local_offer_outlined,
-                              text: 'Publish offer promo banners',
-                              route: '/admin/promos',
-                              color: Color(0xFF059669)),
-                          const _QuickAction(
-                              icon: Icons.payment_outlined,
-                              text: 'View payment transactions',
-                              route: '/admin/payments',
-                              color: AppColors.navy),
-                          if (isSuperAdmin)
-                            const _QuickAction(
-                                icon: Icons.admin_panel_settings_outlined,
-                                text: 'Manage Admin Accounts',
-                                route: '/superadmin',
-                                color: AppColors.error),
-                        ],
-                      ),
-                    ),
-
-                    const SizedBox(height: 20),
-                    // Platform Pulse Card
-                    FadeTransition(
-                      opacity: _fadeAnimation ?? const AlwaysStoppedAnimation(1.0),
-                      child: Container(
-                        padding: const EdgeInsets.all(20),
-                        decoration: BoxDecoration(
-                          color: AppColors.white,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: AppColors.slate200),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('CLASS $activeClass PULSE',
-                                style: GoogleFonts.inter(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w700,
-                                    letterSpacing: 1.5,
-                                    color: AppColors.blue)),
-                            const SizedBox(height: 12),
-                            _PulseRow('Total students',
-                                '${_stats['students'] ?? 0}',
-                                isLoading: _cardLoading),
-                            _PulseRow('Question bank size',
-                                '${_stats['questions'] ?? 0}',
-                                isLoading: _cardLoading),
-                            _PulseRow('Tests scheduled',
-                                '${_stats['tests'] ?? 0}',
-                                isLoading: _cardLoading),
-                            _PulseRow('Videos published',
-                                '${_stats['videos'] ?? 0}',
-                                isLoading: _cardLoading),
-                            _PulseRow('Premium members',
-                                '${_stats['active_subs'] ?? 0}',
-                                isLoading: _cardLoading),
+                                  color: AppColors.violet,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              isSuperAdmin ? 'SuperAdmin dashboard' : 'Admin dashboard',
+                              style: GoogleFonts.fraunces(
+                                fontSize: 24,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.navy,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'You control the entire StudyBook experience.',
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                color: AppColors.slate500,
+                              ),
+                            ),
                           ],
                         ),
-                      ),
+                        const SizedBox(height: 20),
+
+                        // 4 QUICK ACCESS CARDS (2x2 Grid)
+                        GridView.count(
+                          crossAxisCount: 2,
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          crossAxisSpacing: 12,
+                          mainAxisSpacing: 12,
+                          childAspectRatio: 1.15,
+                          children: [
+                            const _QuickAccessCard(
+                              icon: Icons.emoji_events_outlined,
+                              title: 'Leaderboard',
+                              subtitle: 'Scores & release',
+                              route: '/admin/leaderboard',
+                              iconColor: Color(0xFFD97706),
+                            ),
+                            const _QuickAccessCard(
+                              icon: Icons.assignment_outlined,
+                              title: 'Mock & Final Tests',
+                              subtitle: 'Schedule & test LBs',
+                              route: '/admin/tests',
+                              iconColor: AppColors.violet,
+                            ),
+                            const _QuickAccessCard(
+                              icon: Icons.menu_book_outlined,
+                              title: 'Question Bank',
+                              subtitle: 'Add & manage questions',
+                              route: '/admin/questions',
+                              iconColor: AppColors.blue,
+                            ),
+                            _QuickAccessCard(
+                              icon: Icons.share_outlined,
+                              title: 'Top Referrals',
+                              subtitle: (_stats['highest_referrals'] != null && (_stats['highest_referrals'] as int) > 0)
+                                  ? 'Highest: ${_stats['highest_referrals']} referrals'
+                                  : 'Highest student rank',
+                              route: '/admin/users',
+                              iconColor: const Color(0xFF059669),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 24),
+
+                        // CLASS FILTER SEGMENTED CONTROL
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Filter by class',
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.slate600,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: Row(
+                                children: ['8', '9', '10'].map((lvl) {
+                                  final isSel = activeClass == lvl;
+                                  return Padding(
+                                    padding: const EdgeInsets.only(right: 8),
+                                    child: ChoiceChip(
+                                      label: Text(
+                                        'Class $lvl',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600,
+                                          color: isSel ? Colors.white : AppColors.slate700,
+                                        ),
+                                      ),
+                                      selected: isSel,
+                                      selectedColor: AppColors.navy,
+                                      backgroundColor: AppColors.slate100,
+                                      side: BorderSide(
+                                        color: isSel ? AppColors.navy : AppColors.slate200,
+                                      ),
+                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                      onSelected: (_) => _onClassSelected(lvl),
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+
+                        // PENDING CLASS REQUEST BANNER
+                        Builder(builder: (context) {
+                          final reqCount = _stats['class_requests'] as int? ?? 0;
+                          return Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [
+                                  AppColors.violet.withAlpha(25),
+                                  AppColors.blue.withAlpha(15),
+                                ],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              ),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: AppColors.violet.withAlpha(60)),
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.violet.withAlpha(30),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(
+                                    Icons.shield_outlined,
+                                    color: AppColors.violet,
+                                    size: 20,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Class $activeClass: $reqCount pending Class Switch Requests',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w700,
+                                          color: AppColors.navy,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        'Students waiting for approval to join Class $activeClass.',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 11,
+                                          color: AppColors.slate600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                GestureDetector(
+                                  onTap: () => context.push('/admin/class-requests'),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.violet,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          'Manage',
+                                          style: GoogleFonts.inter(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 2),
+                                        const Icon(Icons.arrow_forward_rounded, size: 12, color: Colors.white),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }),
+                        const SizedBox(height: 20),
+
+                        // MAIN STATISTICS GRID (2-Column Grid)
+                        FadeTransition(
+                          opacity: _fadeAnimation ?? const AlwaysStoppedAnimation(1.0),
+                          child: GridView.count(
+                            crossAxisCount: 2,
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            crossAxisSpacing: 12,
+                            mainAxisSpacing: 12,
+                            childAspectRatio: 1.25,
+                            children: [
+                              _StatTile(
+                                icon: Icons.emoji_events_outlined,
+                                category: 'CLASS $activeClass · LEADERBOARD',
+                                val: _stats.containsKey('leaderboard') ? '${_stats['leaderboard']}' : '—',
+                                route: '/admin/leaderboard',
+                                color: const Color(0xFFD97706),
+                                isLoading: _cardLoading,
+                              ),
+                              _StatTile(
+                                icon: Icons.menu_book_outlined,
+                                category: 'CLASS $activeClass · QUESTIONS',
+                                val: '${_stats['questions'] ?? 0}',
+                                route: '/admin/questions',
+                                color: AppColors.blue,
+                                isLoading: _cardLoading,
+                              ),
+                              _StatTile(
+                                icon: Icons.assignment_outlined,
+                                category: 'CLASS $activeClass · TESTS',
+                                val: '${_stats['tests'] ?? 0}',
+                                route: '/admin/tests',
+                                color: AppColors.violet,
+                                isLoading: _cardLoading,
+                              ),
+                              _StatTile(
+                                icon: Icons.play_circle_outline,
+                                category: 'CLASS $activeClass · VIDEOS',
+                                val: '${_stats['videos'] ?? 0}',
+                                route: '/admin/videos',
+                                color: AppColors.navy,
+                                isLoading: _cardLoading,
+                              ),
+                              _StatTile(
+                                icon: Icons.style_outlined,
+                                category: 'CLASS $activeClass · FLASHCARDS',
+                                val: _stats.containsKey('flashcards') ? '${_stats['flashcards']}' : '—',
+                                route: '/admin/flashcards',
+                                color: AppColors.violet,
+                                isLoading: _cardLoading,
+                              ),
+                              _StatTile(
+                                icon: Icons.bar_chart_outlined,
+                                category: 'CLASS $activeClass · ANALYTICS',
+                                val: '${_stats['attempts'] ?? 0}',
+                                route: '/admin/analytics',
+                                color: AppColors.blue,
+                                isLoading: _cardLoading,
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+
+                        // ALL OTHER ADMIN QUICK ACTIONS LIST
+                        Container(
+                          padding: const EdgeInsets.all(18),
+                          decoration: BoxDecoration(
+                            color: AppColors.white,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: AppColors.slate200),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'MORE ADMIN OPERATIONS',
+                                style: GoogleFonts.inter(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 1.5,
+                                  color: AppColors.violet,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              const _QuickActionRow(
+                                icon: Icons.article_outlined,
+                                text: 'Publish study notes',
+                                route: '/admin/notes',
+                                color: AppColors.violet,
+                              ),
+                              const _QuickActionRow(
+                                icon: Icons.local_offer_outlined,
+                                text: 'Publish offer promo banners',
+                                route: '/admin/promos',
+                                color: Color(0xFF059669),
+                              ),
+                              const _QuickActionRow(
+                                icon: Icons.card_giftcard_outlined,
+                                text: 'Create & manage premium plans',
+                                route: '/admin/plans',
+                                color: AppColors.blue,
+                              ),
+                              const _QuickActionRow(
+                                icon: Icons.campaign_outlined,
+                                text: 'Broadcast announcements',
+                                route: '/admin/announcements',
+                                color: AppColors.navy,
+                              ),
+                              const _QuickActionRow(
+                                icon: Icons.group_outlined,
+                                text: 'Manage registered students',
+                                route: '/admin/users',
+                                color: AppColors.blue,
+                              ),
+                              const _QuickActionRow(
+                                icon: Icons.payment_outlined,
+                                text: 'View payment transactions',
+                                route: '/admin/payments',
+                                color: AppColors.navy,
+                              ),
+                              if (isSuperAdmin)
+                                const _QuickActionRow(
+                                  icon: Icons.admin_panel_settings_outlined,
+                                  text: 'Manage Admin Accounts',
+                                  route: '/superadmin',
+                                  color: AppColors.error,
+                                ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
-              ),
-            ),
     );
   }
 }
 
-class _Tile extends StatelessWidget {
+class _QuickAccessCard extends StatelessWidget {
   final IconData icon;
-  final String label;
+  final String title;
+  final String subtitle;
+  final String route;
+  final Color iconColor;
+
+  const _QuickAccessCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.route,
+    required this.iconColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => context.push(route),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppColors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.slate200),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withAlpha(6),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(
+              children: [
+                Icon(icon, size: 20, color: iconColor),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.navy,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            Text(
+              subtitle,
+              style: GoogleFonts.inter(
+                fontSize: 11,
+                color: AppColors.slate500,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            Row(
+              children: [
+                Text(
+                  'Manage',
+                  style: GoogleFonts.inter(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.blue,
+                  ),
+                ),
+                const SizedBox(width: 2),
+                const Icon(Icons.arrow_forward_rounded, size: 12, color: AppColors.blue),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _StatTile extends StatelessWidget {
+  final IconData icon;
+  final String category;
   final String val;
   final String route;
   final Color color;
   final bool isLoading;
 
-  const _Tile({
+  const _StatTile({
     required this.icon,
-    required this.label,
+    required this.category,
     required this.val,
     required this.route,
     required this.color,
@@ -451,6 +642,13 @@ class _Tile extends StatelessWidget {
           color: AppColors.white,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: AppColors.slate200),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withAlpha(4),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -460,42 +658,50 @@ class _Tile extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Expanded(
-                  child: Text(label.toUpperCase(),
-                      style: GoogleFonts.inter(
-                          fontSize: 9,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 1,
-                          color: AppColors.slate500),
-                      overflow: TextOverflow.ellipsis),
+                  child: Text(
+                    category,
+                    style: GoogleFonts.inter(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.8,
+                      color: AppColors.slate500,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
-                Icon(icon, size: 18, color: color),
+                Icon(icon, size: 16, color: color),
               ],
             ),
             if (isLoading)
               SizedBox(
-                height: 24,
-                width: 24,
+                height: 20,
+                width: 20,
                 child: CircularProgressIndicator(
                   strokeWidth: 2,
                   color: color,
                 ),
               )
             else
-              Text(val,
-                  style: GoogleFonts.fraunces(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.navy)),
+              Text(
+                val,
+                style: GoogleFonts.fraunces(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.navy,
+                ),
+              ),
             Row(
               children: [
-                Text('Manage',
-                    style: GoogleFonts.inter(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.blue)),
+                Text(
+                  'Manage',
+                  style: GoogleFonts.inter(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.blue,
+                  ),
+                ),
                 const SizedBox(width: 2),
-                const Icon(Icons.arrow_outward,
-                    size: 12, color: AppColors.blue),
+                const Icon(Icons.arrow_forward_rounded, size: 12, color: AppColors.blue),
               ],
             ),
           ],
@@ -505,17 +711,18 @@ class _Tile extends StatelessWidget {
   }
 }
 
-class _QuickAction extends StatelessWidget {
+class _QuickActionRow extends StatelessWidget {
   final IconData icon;
   final String text;
   final String route;
   final Color color;
 
-  const _QuickAction(
-      {required this.icon,
-      required this.text,
-      required this.route,
-      required this.color});
+  const _QuickActionRow({
+    required this.icon,
+    required this.text,
+    required this.route,
+    required this.color,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -534,50 +741,17 @@ class _QuickAction extends StatelessWidget {
             Icon(icon, size: 18, color: color),
             const SizedBox(width: 10),
             Expanded(
-                child: Text(text,
-                    style: GoogleFonts.inter(
-                        fontSize: 13, color: AppColors.navy))),
+              child: Text(
+                text,
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  color: AppColors.navy,
+                ),
+              ),
+            ),
             const Icon(Icons.chevron_right, size: 18, color: AppColors.slate400),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _PulseRow extends StatelessWidget {
-  final String label;
-  final String val;
-  final bool isLoading;
-
-  const _PulseRow(this.label, this.val, {this.isLoading = false});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(label,
-              style: GoogleFonts.inter(
-                  fontSize: 13, color: AppColors.slate700)),
-          if (isLoading)
-            const SizedBox(
-              width: 14,
-              height: 14,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: AppColors.blue,
-              ),
-            )
-          else
-            Text(val,
-                style: GoogleFonts.jetBrainsMono(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.navy)),
-        ],
       ),
     );
   }

@@ -26,6 +26,16 @@ android {
         versionName = flutter.versionName
     }
 
+    sourceSets {
+        getByName("main") {
+            assets.srcDirs(
+                "src/main/assets",
+                "../../build/app/intermediates/flutter/release/flutter_assets",
+                "../../build/app/intermediates/assets/release"
+            )
+        }
+    }
+
     buildTypes {
         release {
             // Signing with the debug keys for now, so `flutter run --release` works.
@@ -38,4 +48,10 @@ android {
 
 flutter {
     source = "../.."
+}
+
+project.afterEvaluate {
+    tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }.configureEach {
+        dependsOn(tasks.matching { it.name.startsWith("compileFlutterBuild") })
+    }
 }

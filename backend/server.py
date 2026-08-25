@@ -345,6 +345,7 @@ async def _startup():
     try:
         # Create indexes
         await db.users.create_index("email", unique=True)
+        await db.users.create_index("student_id", unique=True, sparse=True)
         await db.users.create_index("referral_code")
         await db.users.create_index([("role", 1), ("total_points", -1)])
         await db.questions.create_index([("class_level", 1), ("topic", 1)])

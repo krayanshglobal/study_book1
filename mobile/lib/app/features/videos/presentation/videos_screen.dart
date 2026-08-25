@@ -5,10 +5,13 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/api/api_endpoints.dart';
 import '../../../core/api/dio_client.dart';
+import '../../../core/config/app_config.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../common/widgets/app_drawer.dart';
 import '../../common/widgets/shared_widgets.dart';
+import 'widgets/video_card.dart';
+import 'widgets/video_skeleton_loader.dart';
 
 class VideosScreen extends ConsumerStatefulWidget {
   const VideosScreen({super.key});
@@ -26,7 +29,6 @@ class _VideosScreenState extends ConsumerState<VideosScreen> {
   void initState() {
     super.initState();
     final user = ref.read(authProvider).user;
-    // Auto-filter to student's assigned class
     if (user != null && !user.isAdmin && user.classLevel != null) {
       _classLevel = user.classLevel!;
     }
@@ -54,18 +56,67 @@ class _VideosScreenState extends ConsumerState<VideosScreen> {
   }
 
   void _openVideo(Map v) async {
-    final urlStr = v['url'] as String? ?? '';
-    final uri = Uri.parse(urlStr);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
-      if (mounted) showToast(context, 'Could not launch video URL', isError: true);
+    final user = ref.read(authProvider).user;
+    final bool isPremium = user?.isAdmin == true || (user?.subscriptionActive ?? false);
+    final bool isLocked = (v['premium_only'] == true) && !isPremium;
+    if (isLocked) {
+      showToast(context, 'Premium subscription required to unlock this video', isError: true);
+      return;
+    }
+
+    String rawUrl = (v['url'] ?? v['video_url'] ?? v['videoUrl'] ?? v['youtube_url'] ?? v['videoLink'] ?? '').toString().trim();
+
+    debugPrint('==================================================');
+    debugPrint('=== VIDEO LAUNCH DEBUG LOG ===');
+    debugPrint('VIDEO TITLE: ${v['title']}');
+    debugPrint('RAW VIDEO URL: "$rawUrl"');
+
+    if (rawUrl.isEmpty) {
+      debugPrint('ERROR: Video URL is null or empty');
+      showToast(context, 'Video is currently unavailable.', isError: true);
+      return;
+    }
+
+    if (rawUrl.startsWith('/')) {
+      rawUrl = '${AppConfig.baseUrl}$rawUrl';
+      debugPrint('RESOLVED RELATIVE URL: "$rawUrl"');
+    }
+
+    final uri = Uri.tryParse(rawUrl);
+    debugPrint('PARSED URI: $uri');
+
+    if (uri == null || !uri.hasScheme || !(uri.scheme == 'http' || uri.scheme == 'https')) {
+      debugPrint('ERROR: Invalid URI or scheme: ${uri?.scheme}');
+      showToast(context, 'Video link is invalid.', isError: true);
+      return;
+    }
+
+    try {
+      bool launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!launched) {
+        debugPrint('LaunchMode.externalApplication returned false, trying LaunchMode.platformDefault...');
+        launched = await launchUrl(uri, mode: LaunchMode.platformDefault);
+      }
+      if (!launched) {
+        if (mounted) showToast(context, 'Unable to open this video. Please try again.', isError: true);
+      }
+    } catch (e) {
+      debugPrint('Video Launch Exception: $e');
+      try {
+        final fallbackLaunched = await launchUrl(uri, mode: LaunchMode.platformDefault);
+        if (!fallbackLaunched && mounted) {
+          showToast(context, 'Unable to open this video. Please try again.', isError: true);
+        }
+      } catch (_) {
+        if (mounted) showToast(context, 'Unable to open this video. Please try again.', isError: true);
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(authProvider).user;
+    final bool isPremium = user?.isAdmin == true || (user?.subscriptionActive ?? false);
 
     return MainScaffold(
       title: 'Video Lessons',
@@ -84,7 +135,7 @@ class _VideosScreenState extends ConsumerState<VideosScreen> {
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
                         color: AppColors.blue.withAlpha(10),
-                        borderRadius: BorderRadius.circular(10),
+                        borderRadius: BorderRadius.circular(99),
                         border: Border.all(color: AppColors.blue.withAlpha(40)),
                       ),
                       child: Row(
@@ -117,7 +168,7 @@ class _VideosScreenState extends ConsumerState<VideosScreen> {
                       initialValue: _classLevel,
                       decoration: InputDecoration(
                         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(99)),
                         isDense: true,
                       ),
                       items: const [
@@ -141,7 +192,7 @@ class _VideosScreenState extends ConsumerState<VideosScreen> {
           const Divider(height: 1, color: AppColors.slate200),
           Expanded(
             child: _loading
-                ? const LoadingIndicator()
+                ? const VideoSkeletonLoader()
                 : _items.isEmpty
                     ? const EmptyState(message: 'No videos yet. Admin will drop lessons soon.', icon: Icons.play_circle_outline)
                     : RefreshIndicator(
@@ -151,96 +202,11 @@ class _VideosScreenState extends ConsumerState<VideosScreen> {
                           itemCount: _items.length,
                           itemBuilder: (ctx, i) {
                             final v = _items[i] as Map;
-                            final bool premiumOnly = v['premium_only'] == true;
-                            final bool isLocked = premiumOnly && !(user?.subscriptionActive ?? false);
-                            final thumbUrl = v['thumbnail_url'] ?? 'https://images.unsplash.com/photo-1509228468518-180dd4864904';
-
-                            return GestureDetector(
-                              onTap: () {
-                                if (isLocked) {
-                                  showToast(context, 'Premium subscription required to unlock this video', isError: true);
-                                } else {
-                                  _openVideo(v);
-                                }
-                              },
-                              child: Container(
-                                margin: const EdgeInsets.only(bottom: 16),
-                                decoration: BoxDecoration(
-                                  color: AppColors.white,
-                                  borderRadius: BorderRadius.circular(16),
-                                  border: Border.all(color: AppColors.slate200),
-                                ),
-                                clipBehavior: Clip.antiAlias,
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Stack(
-                                      children: [
-                                        AspectRatio(
-                                          aspectRatio: 16 / 9,
-                                          child: Image.network(
-                                            thumbUrl,
-                                            fit: BoxFit.cover,
-                                            errorBuilder: (_, __, ___) => Container(color: AppColors.slate100),
-                                          ),
-                                        ),
-                                        Positioned.fill(
-                                          child: Container(
-                                            color: Colors.black26,
-                                            child: Center(
-                                              child: Icon(
-                                                isLocked ? Icons.lock_outlined : Icons.play_circle_fill,
-                                                size: 54,
-                                                color: Colors.white,
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                        if (premiumOnly)
-                                          Positioned(
-                                            top: 12,
-                                            left: 12,
-                                            child: Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                              decoration: BoxDecoration(
-                                                color: AppColors.warning,
-                                                borderRadius: BorderRadius.circular(6),
-                                              ),
-                                              child: Text('PREMIUM',
-                                                  style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white)),
-                                            ),
-                                          ),
-                                      ],
-                                    ),
-                                    Padding(
-                                      padding: const EdgeInsets.all(16),
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            'Class ${v['class_level']} · ${v['topic'] ?? 'General'}'.toUpperCase(),
-                                            style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1.5, color: AppColors.violet),
-                                          ),
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            v['title'] ?? '',
-                                            style: GoogleFonts.fraunces(fontSize: 18, fontWeight: FontWeight.w600, color: AppColors.navy),
-                                          ),
-                                          if (v['description'] != null && (v['description'] as String).isNotEmpty) ...[
-                                            const SizedBox(height: 4),
-                                            Text(
-                                              v['description'],
-                                              style: GoogleFonts.inter(fontSize: 13, color: AppColors.slate500),
-                                              maxLines: 2,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ],
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
+                            final bool isLocked = (v['premium_only'] == true) && !isPremium;
+                            return VideoCard(
+                              video: v,
+                              isLocked: isLocked,
+                              onTap: () => _openVideo(v),
                             );
                           },
                         ),

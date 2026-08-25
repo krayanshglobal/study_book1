@@ -5,6 +5,8 @@ class UserModel {
   final String? phone;
   final String role; // "student", "admin", "superadmin"
   final String? classLevel;
+  final String? studentId;
+  final String? avatarUrl;
   final String? referralCode;
   final String? referredBy;
   final bool subscriptionActive;
@@ -19,6 +21,8 @@ class UserModel {
     this.phone,
     required this.role,
     this.classLevel,
+    this.studentId,
+    this.avatarUrl,
     this.referralCode,
     this.referredBy,
     this.subscriptionActive = false,
@@ -38,6 +42,8 @@ class UserModel {
       phone: json['phone']?.toString(),
       role: json['role']?.toString() ?? 'student',
       classLevel: json['class_level']?.toString(),
+      studentId: json['student_id']?.toString(),
+      avatarUrl: json['avatar_url']?.toString() ?? json['profile_picture']?.toString(),
       referralCode: json['referral_code']?.toString(),
       referredBy: json['referred_by']?.toString(),
       subscriptionActive: json['subscription_active'] == true,
@@ -55,6 +61,8 @@ class UserModel {
       'phone': phone,
       'role': role,
       'class_level': classLevel,
+      'student_id': studentId,
+      'avatar_url': avatarUrl,
       'referral_code': referralCode,
       'referred_by': referredBy,
       'subscription_active': subscriptionActive,

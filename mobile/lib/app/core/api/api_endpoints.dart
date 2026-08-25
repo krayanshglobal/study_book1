@@ -2,6 +2,9 @@ class ApiEndpoints {
   // Auth
   static const String login = '/api/auth/login';
   static const String register = '/api/auth/register';
+  static const String googleLogin = '/api/auth/google';
+  static const String mobileSendOtp = '/api/auth/mobile/send-otp';
+  static const String mobileVerifyOtp = '/api/auth/mobile/verify-otp';
   static const String me = '/api/auth/me';
   static const String logout = '/api/auth/logout';
   static const String refresh = '/api/auth/refresh';
@@ -52,6 +55,10 @@ class ApiEndpoints {
   // Leaderboard & Referrals
   static const String leaderboard = '/api/leaderboard';
   static const String myReferrals = '/api/referrals/me';
+  static const String adminLeaderboardReleaseStatus = '/api/admin/leaderboard/release-status';
+  static const String adminLeaderboardRelease = '/api/admin/leaderboard/release';
+  static String adminTestLeaderboardReleaseStatus(String testId) => '/api/admin/leaderboard/test/$testId/release-status';
+  static String adminTestLeaderboardRelease(String testId) => '/api/admin/leaderboard/test/$testId/release';
 
   // Plans
   static const String plans = '/api/plans';

@@ -21,11 +21,30 @@ class RegisterInput(BaseModel):
     class_level: Optional[Literal["8", "9", "10"]] = None
     referral_code: Optional[str] = None
     avatar_url: Optional[str] = None
+    verification_token: Optional[str] = None
 
 
 class LoginInput(BaseModel):
     email: EmailStr
     password: str
+
+
+class GoogleLoginInput(BaseModel):
+    id_token: str
+    class_level: Optional[Literal["8", "9", "10"]] = None
+    referral_code: Optional[str] = None
+
+
+class MobileSendOtpInput(BaseModel):
+    phone: str
+
+
+class MobileVerifyOtpInput(BaseModel):
+    phone: str
+    otp: str
+    name: Optional[str] = None
+    class_level: Optional[Literal["8", "9", "10"]] = None
+    referral_code: Optional[str] = None
 
 
 class ForgotPasswordInput(BaseModel):

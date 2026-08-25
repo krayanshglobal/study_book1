@@ -214,7 +214,12 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
     if (_navigated || !mounted) return;
     _navigated = true;
     if (auth.user != null) {
-      context.go(auth.user!.isAdmin ? '/admin' : '/dashboard');
+      debugPrint('[SESSION DIAGNOSTICS] Session restored for user: ${auth.user!.email}, role: ${auth.user!.role}');
+      if (auth.user!.isAdmin) {
+        context.go('/admin');
+      } else {
+        context.go('/dashboard');
+      }
     } else {
       context.go('/login');
     }

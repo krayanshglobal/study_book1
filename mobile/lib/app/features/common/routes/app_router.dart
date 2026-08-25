@@ -109,7 +109,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           return '/dashboard';
         }
         if (loc == '/superadmin' && !authState.user!.isSuperAdmin) {
-          return '/admin';
+          return authState.user!.isAdmin ? '/admin' : '/dashboard';
         }
         return null;
       } else {
@@ -257,6 +257,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/admin/payments', pageBuilder: (context, state) => _buildFadeSlidePage(state: state, child: const ManagePaymentsScreen())),
       GoRoute(path: '/admin/announcements', pageBuilder: (context, state) => _buildFadeSlidePage(state: state, child: const ManageAnnouncementsScreen())),
       GoRoute(path: '/admin/analytics', pageBuilder: (context, state) => _buildFadeSlidePage(state: state, child: const AdminAnalyticsScreen())),
+      GoRoute(path: '/admin/leaderboard', pageBuilder: (context, state) => _buildFadeSlidePage(state: state, child: const LeaderboardScreen())),
       GoRoute(path: '/superadmin', pageBuilder: (context, state) => _buildFadeSlidePage(state: state, child: const SuperAdminScreen())),
     ],
   );

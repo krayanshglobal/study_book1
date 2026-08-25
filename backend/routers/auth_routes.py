@@ -247,7 +247,11 @@ async def forgot_password(body: ForgotPasswordInput):
     frontend = os.environ.get("FRONTEND_URL", "")
     logger.info(f"[password-reset] {email} -> {frontend}/reset-password?token={token}")
     print(f"[password-reset] {email} -> {frontend}/reset-password?token={token}")
-    return {"ok": True}
+    
+    res = {"ok": True}
+    if os.environ.get("ENVIRONMENT") != "production":
+        res["dev_reset_token"] = token
+    return res
 
 
 @router.post("/reset-password")

@@ -10,6 +10,7 @@ import Landing from "@/pages/Landing";
 import Login from "@/pages/Login";
 import Register from "@/pages/Register";
 import ForgotPassword from "@/pages/ForgotPassword";
+import ResetPassword from "@/pages/ResetPassword";
 import StudentDashboard from "@/pages/StudentDashboard";
 import QuestionBank from "@/pages/QuestionBank";
 import Tests from "@/pages/Tests";
@@ -60,6 +61,7 @@ function App() {
           <Route path="/login" element={<Layout><Login /></Layout>} />
           <Route path="/register" element={<Layout><Register /></Layout>} />
           <Route path="/forgot-password" element={<Layout><ForgotPassword /></Layout>} />
+          <Route path="/reset-password" element={<Layout><ResetPassword /></Layout>} />
 
           {/* Student */}
           <Route path="/dashboard" element={<ProtectedRoute><Layout><DashboardRouter /></Layout></ProtectedRoute>} />

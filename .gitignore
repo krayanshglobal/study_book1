@@ -87,3 +87,41 @@ credentials.json
 *.key
 .credentials
 frontend/node_modules/.cache/default-development/7.pack
+# Firebase
+frontend/.firebase/
+
+# Flutter / Dart
+mobile/.dart_tool/
+mobile/build/
+mobile/.flutter-plugins
+mobile/.flutter-plugins-dependencies
+
+# Android Gradle and build files
+mobile/android/.gradle/
+mobile/android/app/.gradle/
+mobile/android/build/
+**/.gradle/
+**/build/
+
+# Test reports
+test_reports/pytest_results.xml
+test_reports/iteration_*.json
+
+# Test reports
+test_reports/iteration_*.json
+test_reports/pytest/pytest_results.xml
+
+# Firebase generated files
+frontend/.firebase/
+
+# Gradle cache and build output
+mobile/android/app/.gradle/
+mobile/android/build/
+
+# Flutter generated files
+mobile/.dart_tool/
+mobile/build/
+
+# Node dependencies
+node_modules/
+frontend/node_modules/

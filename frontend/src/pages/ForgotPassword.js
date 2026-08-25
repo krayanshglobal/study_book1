@@ -10,12 +10,16 @@ export default function ForgotPassword() {
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [devToken, setDevToken] = useState(null);
 
   const submit = async (e) => {
     e.preventDefault();
     setBusy(true);
     try {
-      await api.post("/api/auth/forgot-password", { email });
+      const res = await api.post("/api/auth/forgot-password", { email });
+      if (res.data?.dev_reset_token) {
+        setDevToken(res.data.dev_reset_token);
+      }
       setSent(true);
       toast.success("If the email exists, a reset link has been sent.");
     } catch (err) {
@@ -30,8 +34,20 @@ export default function ForgotPassword() {
       <h1 className="font-serif text-4xl text-[#0F1B4C] font-semibold">Forgot password</h1>
       <p className="mt-2 text-[#64748B]">Enter your email and we&apos;ll send you a reset link.</p>
       {sent ? (
-        <div className="mt-8 rounded-xl bg-white border border-slate-200 p-6" data-testid="forgot-success">
-          <p className="text-[#334155]">Check the server console for the reset link (email delivery not enabled in this environment).</p>
+        <div className="mt-8 rounded-xl bg-white border border-slate-200 p-6 space-y-4" data-testid="forgot-success">
+          <p className="text-[#334155]">
+            {devToken
+              ? "Reset token generated! Click below to set your new password directly."
+              : "Check the server console for the reset link (email delivery not enabled in this environment)."}
+          </p>
+          <div className="pt-2">
+            <Link
+              to={devToken ? `/reset-password?token=${devToken}` : "/reset-password"}
+              className="inline-block w-full text-center rounded-full bg-[#0F1B4C] hover:bg-[#2563EB] text-white py-3 font-medium transition-colors"
+            >
+              {devToken ? "Reset Password Now" : "Enter Token & Reset Password"}
+            </Link>
+          </div>
         </div>
       ) : (
         <form onSubmit={submit} className="mt-8 space-y-5">

@@ -92,12 +92,16 @@ app.include_router(study_features_router)
 # CORS
 # ─────────────────────────────────────────
 frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3000")
-_origins = list({frontend_url, "http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:3001", "http://127.0.0.1:3001"})
+cors_origins_str = os.environ.get("CORS_ORIGINS", "*")
+if cors_origins_str == "*":
+    _origins = ["*"]
+else:
+    _origins = list(set([o.strip() for o in cors_origins_str.split(",") if o.strip()] + [frontend_url, "https://student-managment-a4ef3.web.app", "http://localhost:3000"]))
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
     allow_origins=_origins,
-    allow_origin_regex=r"http://(localhost|127\.0\.0\.1)(:\d+)?",
     allow_methods=["*"],
     allow_headers=["*"],
 )

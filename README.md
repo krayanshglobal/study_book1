@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="/c_maths_logo.png" alt="C Maths" width="140" />
+  <img src="./c_maths_logo.png" alt="C Maths" width="140" />
 
   # C Maths — Premium Mathematics Learning Platform
 

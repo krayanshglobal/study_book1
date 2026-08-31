@@ -19,7 +19,7 @@ if _missing:
     print(f"Warning: Missing required environment variables: {', '.join(_missing)}")
     print("Falling back to localhost for seeding script.")
     mongo_url = os.environ.get('MONGO_URL', 'mongodb://localhost:27017')
-    db_name = os.environ.get('DB_NAME', 'studybook')
+    db_name = os.environ.get('DB_NAME', 'cmaths')
 else:
     mongo_url = os.environ['MONGO_URL']
     db_name = os.environ['DB_NAME']

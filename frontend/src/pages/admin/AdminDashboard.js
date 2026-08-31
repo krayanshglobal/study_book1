@@ -75,7 +75,7 @@ export default function AdminDashboard() {
           <h1 className="mt-2 font-serif text-4xl text-[#0F1B4C] font-semibold">
             {user?.role === "superadmin" ? "SuperAdmin dashboard" : "Admin dashboard"}
           </h1>
-          <p className="mt-1 text-[#64748B]">You control the entire StudyBook experience.</p>
+          <p className="mt-1 text-[#64748B]">You control the entire C Maths experience.</p>
         </div>
       </div>
 

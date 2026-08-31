@@ -6,7 +6,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
-import { Calendar, Trophy, Users, Video, ArrowUpRight, Sparkles, TrendingUp, Bell, Clock, ArrowRight, Ruler, GraduationCap, Copy, Check, ChevronLeft, ChevronRight } from "lucide-react";
+import { Calendar, Trophy, Users, Video, ArrowUpRight, Sparkles, TrendingUp, Bell, Clock, ArrowRight, Ruler, GraduationCap, Copy, Check, ChevronLeft, ChevronRight, Flame, BookOpen } from "lucide-react";
 import { toast } from "sonner";
 
 function timeUntil(t) {
@@ -85,7 +85,7 @@ const bannerConfigs = [
     ),
     renderRight: () => (
       <div className="hidden md:flex flex-col items-center justify-center shrink-0 w-32 h-24 bg-red-600 border border-red-700 rounded-xl p-3 text-center shadow-lg transform -rotate-3 z-10 text-white">
-        <div className="text-[9px] uppercase tracking-widest text-amber-200 font-bold">StudyBook Infinity</div>
+        <div className="text-[9px] uppercase tracking-widest text-amber-200 font-bold">C Maths Infinity</div>
         <div className="font-serif text-sm font-extrabold mt-0.5 tracking-tight">LAUNCH</div>
         <div className="text-[9px] uppercase font-bold text-white bg-black/20 px-2 py-0.5 rounded mt-1.5">OFFER</div>
       </div>
@@ -128,7 +128,7 @@ const bannerConfigs = [
         <div className="absolute -left-9 top-[35%] w-0 h-0 border-l-[9px] border-l-transparent border-r-[9px] border-r-transparent border-b-[16px] border-b-yellow-400/35 transform rotate-12 pointer-events-none" />
         <div className="absolute -right-5 bottom-[20%] w-0 h-0 border-l-[11px] border-l-transparent border-r-[11px] border-r-transparent border-b-[18px] border-b-white/25 transform -rotate-45 pointer-events-none" />
         <div className="flex flex-col items-center justify-center w-28 h-28 bg-[#1E3A8A]/50 border-2 border-[#FBBF24] rounded-2xl p-4 text-[#FBBF24] text-center shadow-xl transform rotate-6">
-          <div className="font-serif text-xs font-bold text-[#FBBF24]">StudyBook</div>
+          <div className="font-serif text-xs font-bold text-[#FBBF24]">C Maths</div>
           <div className="text-xs font-bold text-white uppercase tracking-wider mt-0.5">Infinity</div>
           <div className="text-[8px] text-yellow-300 mt-1.5 uppercase font-semibold tracking-wider">*Limited Offer</div>
         </div>
@@ -191,6 +191,9 @@ export default function StudentDashboard() {
   // Announcements state
   const [activeAnnIndex, setActiveAnnIndex] = useState(0);
 
+  // Daily practice state
+  const [dailyPractice, setDailyPractice] = useState(null);
+
   // Referral copy state
   const [copied, setCopied] = useState(false);
   const handleCopyCode = () => {
@@ -234,9 +237,9 @@ export default function StudentDashboard() {
       const key = `notified_${t._id}`;
       if (msToStart > 0 && msToStart < 15 * 60 * 1000 && !sessionStorage.getItem(key)) {
         try {
-          new Notification("StudyBook — test starting soon", {
+          new Notification("C Maths — test starting soon", {
             body: `${t.title} starts ${fmtCountdown(msToStart)}`,
-            icon: "https://customer-assets-eiarnc6j.emergentagent.net/job_leaderbook-study/artifacts/8fbe1ch1_image.png",
+            icon: "/c_maths_logo.png",
           });
           sessionStorage.setItem(key, "1");
         } catch {}
@@ -256,7 +259,9 @@ export default function StudentDashboard() {
       const fetchAnn = api.get("/api/announcements").then((r) => setAnn(r.data.items || [])).catch(() => {});
       const fetchPromos = api.get("/api/promos").then((r) => setPromos(r.data.items || [])).catch(() => {});
 
-      await Promise.allSettled([fetchUpcoming, fetchLb, fetchRefs, fetchAnn, fetchPromos]);
+      const fetchDaily = api.get("/api/students/daily-practice").then((r) => setDailyPractice(r.data)).catch(() => {});
+
+      await Promise.allSettled([fetchUpcoming, fetchLb, fetchRefs, fetchAnn, fetchPromos, fetchDaily]);
     })();
   }, [user]);
 
@@ -266,16 +271,17 @@ export default function StudentDashboard() {
     const interval = setInterval(() => {
       const updated = {};
       promos.forEach((p) => {
-        const endTime = new Date(p.created_at).getTime() + p.countdown_hours * 60 * 60 * 1000;
-        const diff = endTime - Date.now();
-        if (diff > 0) {
-          const hours = Math.floor(diff / 3600000);
-          const mins = Math.floor((diff % 3600000) / 60000);
-          const secs = Math.floor((diff % 60000) / 1000);
-          updated[p._id] = `${hours}h : ${mins}m : ${secs}s`;
-        } else {
-          updated[p._id] = "Expired";
+        const totalMs = (p.countdown_hours || 24) * 3600000;
+        const createdAtMs = p.created_at ? new Date(p.created_at).getTime() : Date.now();
+        let diff = (createdAtMs + totalMs) - Date.now();
+        if (diff <= 0) {
+          const elapsed = (Date.now() - createdAtMs) % totalMs;
+          diff = totalMs - elapsed;
         }
+        const hours = Math.floor(diff / 3600000);
+        const mins = Math.floor((diff % 3600000) / 60000);
+        const secs = Math.floor((diff % 60000) / 1000);
+        updated[p._id] = `${hours}h : ${mins}m : ${secs}s left`;
       });
       setPromoTimes(updated);
     }, 1000);
@@ -305,6 +311,37 @@ export default function StudentDashboard() {
           {user?.subscription_active ? "Premium member" : "Free plan"} · Your personalised study space.
         </p>
       </motion.div>
+
+      {/* Alert Banner for Admin Uploaded Daily Questions */}
+      {dailyPractice && !dailyPractice.completed && (dailyPractice.questions?.length > 0) && (
+        <motion.div
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mt-6 p-4 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-red-500 text-white shadow-lg flex items-center justify-between gap-4 flex-wrap"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center shrink-0">
+              <Flame size={22} className="animate-pulse" />
+            </div>
+            <div>
+              <div className="font-bold text-sm sm:text-base flex items-center gap-2">
+                🔥 New Daily Practice Uploaded by Admin!
+                <span className="text-[10px] bg-white text-orange-600 font-extrabold uppercase px-2 py-0.5 rounded-full">
+                  24h Only
+                </span>
+              </div>
+              <p className="text-xs text-orange-100 mt-0.5">
+                {dailyPractice.attempted_ids?.length ?? 0} / {dailyPractice.total ?? 10} questions answered today. Solve now before 24-hour expiration!
+              </p>
+            </div>
+          </div>
+          <Link to="/questions?mode=daily">
+            <Button className="rounded-full bg-white text-orange-600 hover:bg-orange-50 font-extrabold text-xs px-5 py-2 shadow-md shrink-0">
+              Solve Daily Questions <ArrowRight size={14} className="ml-1" />
+            </Button>
+          </Link>
+        </motion.div>
+      )}
 
       {/* Promos Banner Slider Section */}
       {promos.length > 0 && (
@@ -390,8 +427,10 @@ export default function StudentDashboard() {
                   </div>
 
                   {/* Countdown Timer */}
-                  <div className="mt-3 text-center text-xs sm:text-sm font-semibold text-slate-600">
-                    Offer ends in: <span className="font-mono text-red-600 font-bold">{promoTimes[p._id] || `${p.countdown_hours || 12}h : 00m : 00s`}</span>
+                  <div className="mt-3 text-center text-xs sm:text-sm font-semibold">
+                    <span className="font-mono text-amber-900 font-bold bg-amber-50 px-4 py-1.5 rounded-full border border-amber-300 inline-flex items-center gap-1.5 shadow-sm">
+                      ⏱️ Offer ends in: <span className="text-red-600 font-extrabold">{promoTimes[p._id] || `${p.countdown_hours || 24}h : 00m : 00s left`}</span>
+                    </span>
                   </div>
                 </div>
               );
@@ -514,66 +553,65 @@ export default function StudentDashboard() {
           </motion.div>
         )}
 
-        {/* Right Card: Practice Questions */}
+        {/* Right Card: Daily Practice Widget */}
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="rounded-3xl p-6 border border-amber-500/20 bg-amber-500/5 flex flex-col justify-between h-44 shadow-sm hover:shadow-md transition-shadow"
+          className="rounded-3xl p-6 border border-amber-500/20 bg-gradient-to-br from-amber-50 to-orange-50 flex flex-col justify-between shadow-sm hover:shadow-md transition-shadow"
         >
-          <div className="flex items-start gap-4">
-            <div className="w-12 h-12 rounded-2xl grid place-items-center bg-amber-100 text-amber-600 shrink-0">
-              <Sparkles size={22} />
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <div className="w-12 h-12 rounded-2xl grid place-items-center bg-amber-100 text-amber-600 shrink-0">
+                <Flame size={22} />
+              </div>
+              <div>
+                <div className="text-xs tracking-widest uppercase font-semibold text-amber-600">Daily Practice</div>
+                <div className="font-serif text-lg text-[#0F1B4C] font-semibold mt-0.5">
+                  {dailyPractice?.total === 0
+                    ? "No daily questions today"
+                    : dailyPractice?.completed
+                    ? "All done today! ✅"
+                    : "Today's Daily Practice"}
+                </div>
+                <div className="text-xs text-[#64748B] mt-0.5 font-medium">
+                  {dailyPractice
+                    ? dailyPractice.total === 0
+                      ? "Admin hasn't uploaded 24h daily practice today"
+                      : `${dailyPractice.attempted_ids?.length ?? 0} / ${dailyPractice.total} answered`
+                    : "Loading…"}
+                </div>
+              </div>
             </div>
-            <div>
-              <div className="text-xs tracking-widest uppercase font-semibold text-amber-600">
-                Daily Prep
+            {(dailyPractice?.streak ?? 0) > 0 && (
+              <div className="flex items-center gap-1 bg-amber-500/15 text-amber-700 rounded-full px-2.5 py-1 text-xs font-bold shrink-0">
+                <Flame size={12} /> {dailyPractice.streak}d
               </div>
-              <div className="font-serif text-lg text-[#0F1B4C] font-semibold mt-1">
-                Practice Today's Question
-              </div>
-              <div className="text-xs text-[#64748B] mt-0.5 font-medium">
-                Solve questions in the bank to level up your score.
-              </div>
+            )}
+          </div>
+
+          {/* Progress bar */}
+          <div className="mt-3">
+            <div className="w-full h-2 bg-amber-100 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-amber-400 to-orange-500 rounded-full transition-all duration-700"
+                style={{ width: `${dailyPractice && dailyPractice.total > 0 ? Math.round(((dailyPractice.attempted_ids?.length ?? 0) / dailyPractice.total) * 100) : 0}%` }}
+              />
             </div>
           </div>
+
           <div className="flex justify-end pt-2">
-            <Link to="/questions">
-              <Button className="rounded-full px-5 py-1.5 h-auto text-xs font-bold bg-[#0F1B4C] hover:bg-[#2563EB] text-white">
-                Practice Now
+            <Link to="/questions?mode=daily">
+              <Button className="rounded-full px-5 py-1.5 h-auto text-xs font-bold bg-[#0F1B4C] hover:bg-amber-600 text-white">
+                <BookOpen size={12} className="mr-1" />
+                {dailyPractice?.completed ? "Review" : "Practice Now"}
               </Button>
             </Link>
           </div>
         </motion.div>
       </div>
 
-      <div className="mt-8 grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard icon={Trophy} label="Total points" value={user?.total_points != null ? Number(user.total_points).toFixed(2).replace(/\.00$/, "") : 0} tone="violet" />
-
-        {/* Class Rank — blurred with big blue Unlock for non-premium */}
-        <Card className="p-6 rounded-2xl border-slate-200 shadow-none hover:shadow-[0_16px_36px_-24px_rgba(15,27,76,0.35)] transition-shadow">
-          <div className="flex items-start justify-between">
-            <div className="flex-1">
-              <div className="text-xs tracking-[0.22em] uppercase text-[#64748B] font-semibold">Class rank</div>
-              {user?.subscription_active ? (
-                <div className="mt-2 font-serif text-3xl text-[#0F1B4C] font-semibold">#{myRank}</div>
-              ) : (
-                <div className="mt-2 flex flex-col gap-2">
-                  <span className="blur-[6px] select-none font-serif text-3xl text-[#0F1B4C] font-semibold">#88</span>
-                  <Link to="/pricing">
-                    <button type="button" className="flex items-center gap-1.5 bg-[#2563EB] hover:bg-[#1d4ed8] text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-all shadow-sm w-full justify-center">
-                      🔒 Unlock Premium
-                    </button>
-                  </Link>
-                </div>
-              )}
-            </div>
-            <div className="w-10 h-10 rounded-xl grid place-items-center bg-slate-50 text-[#2563EB] shrink-0">
-              <TrendingUp size={20} />
-            </div>
-          </div>
-        </Card>
-
+      <div className="mt-8 grid sm:grid-cols-2 gap-4">
         <StatCard icon={Users} label="Referrals" value={refs?.count ?? 0} tone="navy" />
 
         {/* Referral code card */}

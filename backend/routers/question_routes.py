@@ -25,11 +25,23 @@ def _ser(q):
 # ============================================================
 
 @router.get("/topics")
-async def list_topics(class_level: Optional[str] = None, user=Depends(get_current_user)):
+async def list_topics(class_level: Optional[str] = None, category: Optional[str] = None, user=Depends(get_current_user)):
     from server import db
     if user["role"] == "student":
         class_level = user.get("class_level")
-    match = {"class_level": class_level} if class_level else {}
+    match = {}
+    if class_level:
+        match["class_level"] = str(class_level)
+
+    if category == "question_bank":
+        match["$or"] = [
+            {"category": "question_bank"},
+            {"category": None},
+            {"category": {"$exists": False}},
+        ]
+    elif category:
+        match["category"] = category
+
     pipeline = [
         {"$match": match},
         {"$group": {"_id": {"class_level": "$class_level", "topic": "$topic"}, "count": {"$sum": 1}}},
@@ -78,6 +90,8 @@ async def bulk_upload_csv(
                 "negative_marks": float(row.get("negative_marks") or 0.25),
                 "difficulty": (row.get("difficulty") or "medium").strip().lower(),
                 "image_url": (row.get("image_url") or "").strip() or None,
+                "category": (row.get("category") or "question_bank").strip().lower(),
+                "is_published": True if (row.get("category") or "").strip().lower() != "draft" else False,
                 "created_by": admin["_id"],
                 "created_at": now_iso(),
             }
@@ -111,41 +125,88 @@ async def list_questions(
     subject: Optional[str] = None,
     difficulty: Optional[str] = None,
     status: Optional[str] = None,
+    category: Optional[str] = None,
     search: Optional[str] = None,
     limit: int = Query(50, le=500),
     skip: int = Query(0, ge=0),
     user=Depends(get_current_user),
 ):
     from server import db
-    q: dict = {}
+    from datetime import datetime, timezone, timedelta
+
+    conditions = []
     if user["role"] == "student":
         class_level = user.get("class_level")
-        # Students ONLY see published questions
-        q["$or"] = [{"is_published": True}, {"is_published": {"$exists": False}}]
+        # Students ONLY see published questions (True or missing)
+        conditions.append({"$or": [{"is_published": True}, {"is_published": {"$exists": False}}]})
     else:
         if status == "draft":
-            q["is_published"] = False
+            conditions.append({"is_published": False})
         elif status == "published":
-            q["$or"] = [{"is_published": True}, {"is_published": {"$exists": False}}]
+            conditions.append({"$or": [{"is_published": True}, {"is_published": {"$exists": False}}]})
+
+    if category == "daily_24h":
+        conditions.append({"category": "daily_24h"})
+        if user["role"] == "student":
+            cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+            conditions.append({
+                "$or": [
+                    {"created_at": {"$gte": cutoff}},
+                    {"published_at": {"$gte": cutoff}},
+                    {"updated_at": {"$gte": cutoff}},
+                ]
+            })
+    elif category == "question_bank":
+        conditions.append({"$or": [
+            {"category": "question_bank"},
+            {"category": None},
+            {"category": {"$exists": False}},
+        ]})
+    elif category == "draft":
+        conditions.append({"$or": [{"category": "draft"}, {"is_published": False}]})
+    elif category:
+        conditions.append({"category": category})
 
     if class_level:
-        q["class_level"] = class_level
+        conditions.append({"class_level": str(class_level)})
     if topic:
-        q["topic"] = topic
+        conditions.append({"topic": topic})
     if subject:
-        q["subject"] = subject
+        conditions.append({"subject": subject})
     if difficulty and difficulty in ("easy", "medium", "hard"):
-        q["difficulty"] = difficulty
+        conditions.append({"difficulty": difficulty})
     if search:
-        q["question_text"] = {"$regex": search, "$options": "i"}
+        conditions.append({"question_text": {"$regex": search, "$options": "i"}})
+
+    q = {"$and": conditions} if conditions else {}
 
     cursor = db.questions.find(q).sort("_id", -1).skip(skip).limit(limit)
     items = [_ser(x) async for x in cursor]
     total = await db.questions.count_documents(q)
 
-    # For non-admin students, hide correct answer in list view
-    if user["role"] == "student":
-        for it in items:
+    # Attach 24h countdown only for daily_24h category; hide correct answer for non-admin students
+    now_utc = datetime.now(timezone.utc)
+    for it in items:
+        cat = it.get("category") or "question_bank"
+        it["category"] = cat
+        if cat == "daily_24h":
+            try:
+                c_str = it.get("created_at") or ""
+                dt = datetime.fromisoformat(c_str.replace("Z", "+00:00"))
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                elapsed = (now_utc - dt).total_seconds()
+                rem = max(0, int(86400 - elapsed))
+                it["time_remaining_seconds"] = rem
+                it["is_expired"] = rem <= 0
+            except Exception:
+                it["time_remaining_seconds"] = 0
+                it["is_expired"] = True
+        else:
+            it["time_remaining_seconds"] = None
+            it["is_expired"] = False
+
+        if user["role"] == "student":
             it.pop("correct_answer_text", None)
 
     return {"items": items, "total": total, "skip": skip, "limit": limit}
@@ -279,8 +340,15 @@ async def create_question(body: QuestionCreate, admin=Depends(require_role("admi
     doc = body.model_dump()
     doc["created_by"] = admin["_id"]
     doc["created_at"] = now_iso()
-    if doc.get("is_published") is None:
+
+    if not doc.get("category"):
+        doc["category"] = "question_bank"
+
+    if doc.get("category") == "draft":
+        doc["is_published"] = False
+    elif doc.get("is_published") is None:
         doc["is_published"] = True
+
     if doc.get("is_published"):
         doc["published_at"] = doc.get("publish_date") or now_iso()
     else:
@@ -303,7 +371,17 @@ async def update_question(qid: str, body: QuestionUpdate, admin=Depends(require_
     upd = {k: v for k, v in body.model_dump().items() if v is not None}
     if "options" in upd and upd["options"] is not None:
         upd["options"] = [o if isinstance(o, dict) else o.model_dump() for o in upd["options"]]
-    if upd.get("is_published") is True:
+
+    if upd.get("category") == "daily_24h":
+        upd["created_at"] = now_iso()
+        upd["published_at"] = now_iso()
+        upd["updated_at"] = now_iso()
+        upd["is_published"] = True
+        # Clear previous attempts so students must solve fresh!
+        await db.question_attempts.delete_many({"question_id": str(oid)})
+    elif upd.get("category") == "draft":
+        upd["is_published"] = False
+    elif upd.get("is_published") is True:
         upd["published_at"] = upd.get("publish_date") or now_iso()
 
     await db.questions.update_one({"_id": oid}, {"$set": upd})

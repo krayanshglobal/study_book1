@@ -21,7 +21,7 @@ print("\n--- Student ---")
 # Register
 payload = {
     "name": "E2E Student",
-    "email": "e2e@studybook.com",
+    "email": "e2e@cmaths.com",
     "phone": "1234567890",
     "password": "password123",
     "class_level": "10"
@@ -29,7 +29,7 @@ payload = {
 resp = client.post(f"{BASE_URL}/api/auth/register", json=payload)
 if resp.status_code == 400 and "already registered" in resp.text:
     print("User already registered, logging in instead.")
-    resp = client.post(f"{BASE_URL}/api/auth/login", json={"email": "e2e@studybook.com", "password": "password123"})
+    resp = client.post(f"{BASE_URL}/api/auth/login", json={"email": "e2e@cmaths.com", "password": "password123"})
 check("Student Login/Register", resp)
 
 # Profile Update
@@ -50,7 +50,7 @@ student_data = check("Student Get Me (Subscription Status)", resp)
 
 # 2. Admin Flow
 print("\n--- Admin ---")
-resp = admin_client.post(f"{BASE_URL}/api/auth/login", json={"email": "admin@studybook.com", "password": "adminpassword123"})
+resp = admin_client.post(f"{BASE_URL}/api/auth/login", json={"email": "admin@cmaths.com", "password": "adminpassword123"})
 admin_data = check("Admin Login", resp)
 
 # Manage Users (List, Edit, Toggle Subscription)

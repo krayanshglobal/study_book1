@@ -1,4 +1,4 @@
-"""Pydantic models for StudyBook."""
+"""Pydantic models for C Maths."""
 from datetime import datetime, timezone
 from typing import List, Optional, Literal, Any
 from pydantic import BaseModel, EmailStr, Field, ConfigDict
@@ -100,6 +100,7 @@ class QuestionCreate(BaseModel):
     allow_file_upload: Optional[bool] = False
     is_published: Optional[bool] = True
     publish_date: Optional[str] = None
+    category: Optional[Literal["question_bank", "daily_24h", "draft"]] = "question_bank"
 
 
 class QuestionUpdate(BaseModel):
@@ -119,6 +120,7 @@ class QuestionUpdate(BaseModel):
     allow_file_upload: Optional[bool] = None
     is_published: Optional[bool] = None
     publish_date: Optional[str] = None
+    category: Optional[Literal["question_bank", "daily_24h", "draft"]] = None
 
 
 # ---------- Test ----------

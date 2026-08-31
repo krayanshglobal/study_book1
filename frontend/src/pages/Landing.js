@@ -28,7 +28,7 @@ export default function Landing() {
             </motion.h1>
 
             <motion.p variants={item} className="mt-6 text-lg text-[#334155] leading-relaxed max-w-xl">
-              StudyBook is a premium learning space designed to help you master any subject at your own pace —
+              C Maths is a premium learning space designed to help you master mathematics at your own pace —
               organised, distraction-free and beautifully crafted.
             </motion.p>
 
@@ -76,7 +76,7 @@ export default function Landing() {
                   className="absolute top-6 left-6 flex items-center gap-2 bg-white/90 backdrop-blur-md rounded-full px-3 py-1.5 shadow-lg"
                 >
                   <img src={LOGO_URL_EXPORT} alt="" className="w-6 h-6 rounded-md" />
-                  <span className="font-serif text-sm text-[#0F1B4C] font-semibold">StudyBook</span>
+                  <span className="font-serif text-sm text-[#0F1B4C] font-semibold">C Maths</span>
                 </motion.div>
 
                 <motion.div
@@ -154,12 +154,12 @@ export default function Landing() {
             viewport={{ once: true }}
             transition={{ duration: 0.7, delay: 0.1 }}
           >
-            <div className="text-xs tracking-[0.28em] uppercase text-[#2563EB] font-semibold">Why StudyBook</div>
+            <div className="text-xs tracking-[0.28em] uppercase text-[#2563EB] font-semibold">Why C Maths</div>
             <h2 className="mt-4 font-serif text-4xl sm:text-5xl text-[#0F1B4C] font-semibold leading-tight">
               Built like a place<br /> you&apos;ll actually return to.
             </h2>
             <p className="mt-5 text-[#475569] text-lg leading-relaxed">
-              Beautiful typography. Zero clutter. Progress you can feel. StudyBook is engineered for young learners
+              Beautiful typography. Zero clutter. Progress you can feel. C Maths is engineered for young learners
               who take their growth seriously — and their aesthetics too.
             </p>
             <ul className="mt-6 space-y-3 text-[#334155]">

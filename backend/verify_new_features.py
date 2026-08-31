@@ -22,7 +22,7 @@ def assert_status(name, resp, expected=200):
 # 1. Admin Login
 print("\n--- 1. Admin Login & Settings ---")
 resp = admin_client.post(f"{BASE_URL}/api/auth/login", json={
-    "email": "admin@studybook.com",
+    "email": "admin@cmaths.com",
     "password": "Admin@123"
 })
 admin_user = assert_status("Admin Login", resp)
@@ -31,7 +31,7 @@ admin_user = assert_status("Admin Login", resp)
 print("\n--- 2. Student Registration & Student ID ---")
 reg_payload = {
     "name": "Feature Tester Student",
-    "email": "featuretester@studybook.com",
+    "email": "featuretester@cmaths.com",
     "phone": "+919876543210",
     "password": "TestPassword123",
     "class_level": "10"
@@ -39,7 +39,7 @@ reg_payload = {
 resp = client.post(f"{BASE_URL}/api/auth/register", json=reg_payload)
 if resp.status_code == 400 and "already registered" in resp.text:
     resp = client.post(f"{BASE_URL}/api/auth/login", json={
-        "email": "featuretester@studybook.com",
+        "email": "featuretester@cmaths.com",
         "password": "TestPassword123"
     })
 student_user = assert_status("Student Register/Login", resp)

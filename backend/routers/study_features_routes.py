@@ -417,6 +417,8 @@ async def update_promo(pid: str, body: PromoBannerUpdate, _=Depends(require_role
     upd = {k: v for k, v in body.model_dump().items() if v is not None}
     if "code" in upd:
         upd["code"] = upd["code"].upper().strip()
+    if upd.get("is_active"):
+        upd["created_at"] = now_iso()
     if not upd:
         raise HTTPException(status_code=400, detail="No fields to update")
     await db.promos.update_one({"_id": oid}, {"$set": upd})

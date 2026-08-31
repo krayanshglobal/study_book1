@@ -46,7 +46,7 @@ export default function Login() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
-            placeholder="you@studybook.com"
+            placeholder="you@cmaths.com"
             className="mt-1.5 rounded-lg"
           />
         </div>
@@ -76,7 +76,7 @@ export default function Login() {
       </form>
 
       <p className="mt-8 text-sm text-[#64748B]">
-        New to StudyBook?{" "}
+        New to C Maths?{" "}
         <Link to="/register" className="text-[#7C3AED] font-medium hover:underline">Create an account</Link>
       </p>
     </div>

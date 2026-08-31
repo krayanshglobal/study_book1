@@ -33,7 +33,7 @@ export default function Referrals() {
             <Button onClick={copy} data-testid="referral-copy-btn" className="rounded-full bg-[#0F1B4C] hover:bg-[#2563EB]">
               <Copy size={16} className="mr-2" /> Copy referral link
             </Button>
-            <Button variant="outline" onClick={() => navigator.share?.({ title: "Join StudyBook", url: `${window.location.origin}/register?ref=${data?.referral_code}` })} className="rounded-full">
+            <Button variant="outline" onClick={() => navigator.share?.({ title: "Join C Maths", url: `${window.location.origin}/register?ref=${data?.referral_code}` })} className="rounded-full">
               <Share2 size={16} className="mr-2" /> Share
             </Button>
           </div>

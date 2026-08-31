@@ -1,9 +1,9 @@
 <div align="center">
-  <img src="https://customer-assets-eiarnc6j.emergentagent.net/job_leaderbook-study/artifacts/8fbe1ch1_image.png" alt="StudyBook" width="140" />
+  <img src="/c_maths_logo.png" alt="C Maths" width="140" />
 
-  # StudyBook — Premium Learning Platform
+  # C Maths — Premium Mathematics Learning Platform
 
-  **Learn • Focus • Achieve**
+  **Master Mathematics**
 
   A production-ready, full-stack, multi-tenant learning platform built with **FastAPI + MongoDB + React**. Beautifully designed. Made to scale.
 
@@ -23,7 +23,7 @@
 
 ## Table of contents
 
-1. [What is StudyBook?](#what-is-studybook)
+1. [What is C Maths?](#what-is-c-maths)
 2. [Feature highlights](#feature-highlights)
 3. [Screenshots](#screenshots)
 4. [Architecture](#architecture)
@@ -41,9 +41,9 @@
 
 ---
 
-## What is StudyBook?
+## What is C Maths?
 
-**StudyBook** is a premium, multi-role learning platform where an admin can build an entire course experience — question banks, scheduled live tests, video lessons, subscription plans, announcements — while students learn, practice, take tests inside a live window and see their progress in a beautifully designed UI.
+**C Maths** is a premium, multi-role learning platform where an admin can build an entire course experience — question banks, scheduled live tests, video lessons, subscription plans, announcements — while students learn, practice, take tests inside a live window and see their progress in a beautifully designed UI.
 
 It ships with three roles out of the box:
 
@@ -83,7 +83,7 @@ It ships with three roles out of the box:
 - **JWT auth with httpOnly cookies** — 7-day access + 30-day refresh, brute-force lockout, password reset tokens
 - **Role-based access control** — decorator dependencies for `student`, `admin`, `superadmin`
 - **Password security** — bcrypt hashing
-- **PWA-ready** — installable on Android / iOS home screen with the StudyBook icon
+- **PWA-ready** — installable on Android / iOS home screen with the C Maths icon
 - **Premium UI** — Fraunces serif + Manrope sans, brand-locked navy → royal-blue → violet palette, glassmorphism, entrance staggers, custom cursor feedback
 
 ---
@@ -203,7 +203,7 @@ It ships with three roles out of the box:
 ## Project structure
 
 ```
-studybook/
+cmaths/
 ├── backend/
 │   ├── server.py                 # FastAPI entrypoint, startup seeding, indexes
 │   ├── auth.py                   # JWT, bcrypt, cookie helpers, role deps
@@ -303,13 +303,13 @@ App is now live at **http://localhost:3000** with the API at **http://localhost:
 | Name | Purpose | Example |
 | :--- | :--- | :--- |
 | `MONGO_URL` | Mongo connection string | `mongodb://localhost:27017` |
-| `DB_NAME` | Database name | `studybook` |
+| `DB_NAME` | Database name | `cmaths` |
 | `CORS_ORIGINS` | Comma-separated allowed origins | `*` |
 | `JWT_SECRET` | 32+ byte secret for signing tokens | *(hex-64 recommended)* |
-| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | Seeded admin credentials | `admin@studybook.com` / `Admin@123` |
-| `SUPERADMIN_EMAIL` / `SUPERADMIN_PASSWORD` | Seeded superadmin credentials | `superadmin@studybook.com` / `Super@123` |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | Seeded admin credentials | `admin@cmaths.com` / `Admin@CMaths2026` |
+| `SUPERADMIN_EMAIL` / `SUPERADMIN_PASSWORD` | Seeded superadmin credentials | `superadmin@cmaths.com` / `SuperAdmin@CMaths2026` |
 | `STRIPE_API_KEY` | Stripe secret key | `sk_test_...` |
-| `FRONTEND_URL` | Public URL of the frontend | `https://studybook.example.com` |
+| `FRONTEND_URL` | Public URL of the frontend | `https://cmaths.example.com` |
 
 **`frontend/.env`**
 
@@ -325,8 +325,8 @@ On first startup, `server.py` upserts two accounts:
 
 | Role | Email | Password |
 | :--- | :--- | :--- |
-| **Admin** | `admin@studybook.com` | `Admin@123` |
-| **SuperAdmin** | `superadmin@studybook.com` | `Super@123` |
+| **Admin** | `admin@cmaths.com` | `Admin@CMaths2026` |
+| **SuperAdmin** | `superadmin@cmaths.com` | `SuperAdmin@CMaths2026` |
 
 > **Change these immediately after deploying to production** by editing `ADMIN_PASSWORD` / `SUPERADMIN_PASSWORD` in `backend/.env` and restarting — the startup routine will re-hash the new password.
 
@@ -431,7 +431,7 @@ The endpoint returns per-row errors so a single bad row never blocks the rest.
 
 ## LaTeX support
 
-Anywhere StudyBook renders question text, options or explanations, we run the value through the **`<MathText>`** component. Inline math is delimited with `$...$`, block math with `$$...$$`.
+Anywhere C Maths renders question text, options or explanations, we run the value through the **`<MathText>`** component. Inline math is delimited with `$...$`, block math with `$$...$$`.
 
 ```jsx
 <MathText text="If $x^2 + 2x - 3 = 0$, then $x = ?$" />
@@ -483,7 +483,7 @@ MIT — do whatever you want, just don't remove the copyright.
 
 <div align="center">
 
-Built with focus by the StudyBook team.
+Built with focus by the C Maths team.
 
 Made possible by ❤ **FastAPI · MongoDB · React · Tailwind · Shadcn UI · KaTeX · Stripe**
 

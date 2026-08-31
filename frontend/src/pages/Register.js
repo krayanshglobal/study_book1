@@ -55,7 +55,7 @@ export default function Register() {
     setSubmitting(true);
     try {
       const u = await register({ ...form, email: cleanedEmail, phone: cleanedPhone });
-      toast.success(`Welcome to StudyBook, ${u.name}!`);
+      toast.success(`Welcome to C Maths, ${u.name}!`);
       navigate("/dashboard", { replace: true });
     } catch (err) {
       toast.error(formatApiError(err));

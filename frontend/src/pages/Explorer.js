@@ -312,7 +312,7 @@ export default function Explorer() {
                 <div className="text-center py-10 bg-slate-50 rounded-2xl border border-slate-150 p-8 shadow-sm">
                   <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-500 grid place-items-center mx-auto mb-4"><Lock size={20} /></div>
                   <h3 className="font-serif text-lg text-[#0F1B4C] font-semibold">Premium Flashcards Locked</h3>
-                  <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">Flashcards help you memorize core terms and formulas rapidly. Upgrade to StudyBook Premium to access them.</p>
+                  <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">Flashcards help you memorize core terms and formulas rapidly. Upgrade to C Maths Premium to access them.</p>
                   <a href="/pricing"><Button className="mt-4 rounded-full bg-[#0F1B4C] hover:bg-[#2563EB] text-xs px-6">View Premium Plans</Button></a>
                 </div>
               ) : flashcards.length === 0 ? (
@@ -481,7 +481,7 @@ export default function Explorer() {
                 <div className="text-center py-10 bg-slate-50 rounded-2xl border border-slate-150 p-8">
                   <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-500 grid place-items-center mx-auto mb-4"><Lock size={20} /></div>
                   <h3 className="font-serif text-lg text-[#0F1B4C] font-semibold">Premium Content Locked</h3>
-                  <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">This study note is exclusively available for premium members. Upgrade to StudyBook Premium to access premium notes, video lessons, and unlocked tests.</p>
+                  <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">This study note is exclusively available for premium members. Upgrade to C Maths Premium to access premium notes, video lessons, and unlocked tests.</p>
                   <a href="/pricing"><Button className="mt-4 rounded-full bg-[#0F1B4C] hover:bg-[#2563EB] text-xs px-6">View Premium Plans</Button></a>
                 </div>
               ) : (

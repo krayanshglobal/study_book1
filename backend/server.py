@@ -1,4 +1,4 @@
-"""StudyBook FastAPI server entrypoint."""
+"""C Maths FastAPI server entrypoint."""
 from dotenv import load_dotenv
 from pathlib import Path
 
@@ -37,7 +37,7 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-app = FastAPI(title="StudyBook API", version="1.0.0")
+app = FastAPI(title="C Maths API", version="1.0.0")
 
 # ─────────────────────────────────────────
 # Global exception handler (no traceback leakage in production)
@@ -66,7 +66,7 @@ api_router = APIRouter(prefix="/api")
 
 @api_router.get("/")
 async def root():
-    return {"status": "ok", "app": "StudyBook", "version": "1.0"}
+    return {"status": "ok", "app": "C Maths", "version": "1.0"}
 
 
 @api_router.get("/health")
@@ -92,11 +92,12 @@ app.include_router(study_features_router)
 # CORS
 # ─────────────────────────────────────────
 frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3000")
-_origins = list({frontend_url, "http://localhost:3000"})
+_origins = list({frontend_url, "http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:3001", "http://127.0.0.1:3001"})
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
     allow_origins=_origins,
+    allow_origin_regex=r"http://(localhost|127\.0\.0\.1)(:\d+)?",
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -272,7 +273,7 @@ async def _seed_sample_data():
         await db.promos.insert_many([
             {
                 "title": "₹200 off for New Users",
-                "subtitle": "Join StudyBook Premium today to unlock all videos, notes, and tests.",
+                "subtitle": "Join C Maths Premium today to unlock all videos, notes, and tests.",
                 "code": "FIRST200",
                 "countdown_hours": 36,
                 "is_active": True,
@@ -297,7 +298,7 @@ async def _seed_test_credentials_file():
     """Write admin/test credentials to /app/memory/test_credentials.md."""
     memory_dir = ROOT_DIR.parent / "memory"
     memory_dir.mkdir(parents=True, exist_ok=True)
-    content = f"""# StudyBook Test Credentials
+    content = f"""# C Maths Test Credentials
 
 ## Admin
 - Email: `{os.environ.get('ADMIN_EMAIL')}`
@@ -310,7 +311,7 @@ async def _seed_test_credentials_file():
 - Role: superadmin
 
 ## Test Premium Student
-- Email: `premium@studybook.com`
+- Email: `premium@cmaths.com`
 - Password: `Premium@123`
 - Role: student
 - Subscription Status: Active Premium
@@ -333,7 +334,7 @@ async def _seed_test_credentials_file():
 
 @app.on_event("startup")
 async def _startup():
-    logger.info("StudyBook API starting up...")
+    logger.info("C Maths API starting up...")
     try:
         # Verify MongoDB connectivity
         await client.admin.command("ping")
@@ -363,11 +364,11 @@ async def _startup():
         await _seed_user("SUPERADMIN_EMAIL", "SUPERADMIN_PASSWORD", "Super Admin", "superadmin")
 
         # Seed premium student
-        existing_premium = await db.users.find_one({"email": "premium@studybook.com"})
+        existing_premium = await db.users.find_one({"email": "premium@cmaths.com"})
         if not existing_premium:
             await db.users.insert_one({
                 "name": "Premium Student",
-                "email": "premium@studybook.com",
+                "email": "premium@cmaths.com",
                 "phone": "+1234567890",
                 "password_hash": hash_password("Premium@123"),
                 "role": "student",
@@ -379,7 +380,31 @@ async def _startup():
                 "total_points": 250,
                 "created_at": now_iso(),
             })
-            logger.info("Seeded premium student: premium@studybook.com")
+            logger.info("Seeded premium student: premium@cmaths.com")
+
+        # Seed test@cmaths.com premium student
+        existing_test = await db.users.find_one({"email": "test@cmaths.com"})
+        if not existing_test:
+            await db.users.insert_one({
+                "name": "Test Student",
+                "email": "test@cmaths.com",
+                "phone": "+1987654321",
+                "password_hash": hash_password("Test@123456"),
+                "role": "student",
+                "class_level": "10",
+                "referral_code": generate_referral_code(),
+                "referred_by": None,
+                "subscription_active": True,
+                "subscription_expires_at": "2030-12-31T23:59:59Z",
+                "total_points": 100,
+                "created_at": now_iso(),
+            })
+            logger.info("Seeded test student: test@cmaths.com")
+        else:
+            await db.users.update_one(
+                {"email": "test@cmaths.com"},
+                {"$set": {"subscription_active": True, "subscription_expires_at": "2030-12-31T23:59:59Z"}}
+            )
 
         await _seed_sample_data()
         await _seed_test_credentials_file()
@@ -391,12 +416,12 @@ async def _startup():
             new_sid = await _generate_student_id(db, cl)
             await db.users.update_one({"_id": u["_id"]}, {"$set": {"student_id": new_sid}})
         
-        logger.info("StudyBook API startup complete.")
+        logger.info("C Maths API startup complete.")
     except Exception as e:
         logger.error(f"Startup error: {e}", exc_info=True)
 
 
 @app.on_event("shutdown")
 async def _shutdown():
-    logger.info("StudyBook API shutting down...")
+    logger.info("C Maths API shutting down...")
     client.close()

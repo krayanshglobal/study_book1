@@ -114,7 +114,7 @@ export default function ManagePromos() {
                   className="mt-1"
                   value={form.subtitle}
                   onChange={(e) => setForm({ ...form, subtitle: e.target.value })}
-                  placeholder="e.g. Join StudyBook Premium today to unlock all materials"
+                  placeholder="e.g. Join C Maths Premium today to unlock all materials"
                 />
               </div>
               <div>

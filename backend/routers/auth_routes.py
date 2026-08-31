@@ -65,7 +65,7 @@ def _get_uid_oid(user: dict) -> ObjectId:
 
 
 async def _generate_student_id(db, class_level: str) -> str:
-    """Generate a unique student ID: SB-YY-CLASS-XXXX using atomic counter."""
+    """Generate a unique student ID: CM-YY-CLASS-XXXX using atomic counter."""
     yy = datetime.now(timezone.utc).strftime("%y")
     bucket = f"student_id_{yy}_{class_level}"
     result = await db.counters.find_one_and_update(
@@ -75,7 +75,7 @@ async def _generate_student_id(db, class_level: str) -> str:
         return_document=True,
     )
     seq = result["seq"]
-    return f"SB-{yy}-{class_level}-{seq:04d}"
+    return f"CM-{yy}-{class_level}-{seq:04d}"
 
 
 @router.post("/register")

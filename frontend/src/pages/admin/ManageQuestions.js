@@ -27,6 +27,7 @@ const emptyQ = {
   allow_file_upload: false,
   is_published: true,
   publish_date: "",
+  category: "question_bank",
 };
 
 export default function ManageQuestions() {
@@ -50,7 +51,7 @@ export default function ManageQuestions() {
     const params = { limit: 200 };
     if (filter.class_level !== "all") params.class_level = filter.class_level;
     if (filter.topic) params.topic = filter.topic;
-    if (filter.status && filter.status !== "all") params.status = filter.status;
+    if (filter.status && filter.status !== "all") params.category = filter.status;
     if (filter.difficulty && filter.difficulty !== "all") params.difficulty = filter.difficulty;
     const r = await api.get("/api/questions", { params });
     setItems(r.data.items || []);
@@ -192,7 +193,7 @@ maths,10,Quadratic,"Discriminant of $ax^2+bx+c$?",typed,,,,,,b^2-4ac,"D = b^2 - 
     const blob = new Blob([CSV_TEMPLATE], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url; a.download = "studybook-questions-template.csv"; a.click();
+    a.href = url; a.download = "cmaths-questions-template.csv"; a.click();
     URL.revokeObjectURL(url);
   };
 
@@ -292,6 +293,24 @@ maths,10,Quadratic,"Discriminant of $ax^2+bx+c$?",typed,,,,,,b^2-4ac,"D = b^2 - 
 
       <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
         <div>
+          <Label className="text-xs font-semibold">Question Destination</Label>
+          <Select
+            value={form.category || "question_bank"}
+            onValueChange={(v) => {
+              setF("category", v);
+              if (v === "draft") setF("is_published", false);
+              else if (v === "daily_24h" || v === "question_bank") setF("is_published", true);
+            }}
+          >
+            <SelectTrigger className="mt-1 bg-white text-xs font-semibold"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="question_bank">📚 Question Bank (Standard)</SelectItem>
+              <SelectItem value="daily_24h">⏱️ Daily 24-Hour Question (Active for 24h)</SelectItem>
+              <SelectItem value="draft">🟡 Draft (Save for tests / later)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
           <Label className="text-xs font-semibold">Publish Status</Label>
           <Select value={form.is_published ? "published" : "draft"} onValueChange={(v) => setF("is_published", v === "published")}>
             <SelectTrigger className="mt-1 bg-white text-xs"><SelectValue /></SelectTrigger>
@@ -321,6 +340,24 @@ maths,10,Quadratic,"Discriminant of $ax^2+bx+c$?",typed,,,,,,b^2-4ac,"D = b^2 - 
     { id: "8", label: "Class 8", desc: "Grade 8 Mathematics and Science question bank", tone: "bg-blue-50 text-[#2563EB] border-blue-200" },
     { id: "9", label: "Class 9", desc: "Grade 9 Mathematics and Science question bank", tone: "bg-emerald-50 text-emerald-700 border-emerald-200" },
     { id: "10", label: "Class 10", desc: "Grade 10 Mathematics and Science question bank", tone: "bg-amber-50 text-amber-700 border-amber-200" },
+  ];
+
+  const moveToCategory = async (id, targetCategory) => {
+    try {
+      const isPub = targetCategory !== "draft";
+      await api.put(`/api/questions/${id}`, { category: targetCategory, is_published: isPub });
+      toast.success(`Question moved to ${targetCategory === "daily_24h" ? "Daily 24h Practice" : targetCategory === "question_bank" ? "Question Bank" : "Drafts"}!`);
+      load();
+    } catch (err) {
+      toast.error(formatApiError(err));
+    }
+  };
+
+  const categoryFilterOptions = [
+    { id: "all", label: "All Destinations" },
+    { id: "question_bank", label: "📚 Question Bank" },
+    { id: "daily_24h", label: "⚡ Daily 24h Practice" },
+    { id: "draft", label: "🟡 Drafts" },
   ];
 
   return (
@@ -378,7 +415,7 @@ maths,10,Quadratic,"Discriminant of $ax^2+bx+c$?",typed,,,,,,b^2-4ac,"D = b^2 - 
         <div>
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div>
-              <div className="text-xs tracking-[0.24em] uppercase text-[#7C3AED] font-semibold">Question Bank</div>
+              <div className="text-xs tracking-[0.24em] uppercase text-[#7C3AED] font-semibold">Question Manager</div>
               <h1 className="mt-2 font-serif text-4xl text-[#0F1B4C] font-semibold">
                 {filter.class_level === "all" ? "All Questions" : `Class ${filter.class_level} Questions`}
               </h1>
@@ -454,7 +491,7 @@ maths,10,Quadratic,"Discriminant of $ax^2+bx+c$?",typed,,,,,,b^2-4ac,"D = b^2 - 
                   <FileText size={14} className="mr-1" /> Save as Draft
                 </Button>
                 <Button className="rounded-full bg-[#7C3AED] hover:bg-[#6D28D9] text-xs font-semibold text-white shadow-sm" onClick={publishImmediately}>
-                  <Send size={14} className="mr-1" /> Publish Immediately {batch.length > 0 || form.question_text.trim() ? `(${batch.length + (form.question_text.trim() ? 1 : 0)})` : ""}
+                  <Send size={14} className="mr-1" /> Save / Publish Immediately {batch.length > 0 || form.question_text.trim() ? `(${batch.length + (form.question_text.trim() ? 1 : 0)})` : ""}
                 </Button>
               </div>
             )}
@@ -475,10 +512,11 @@ maths,10,Quadratic,"Discriminant of $ax^2+bx+c$?",typed,,,,,,b^2-4ac,"D = b^2 - 
         </Select>
 
         <Select value={filter.status || "all"} onValueChange={(v) => setFilter({ ...filter, status: v })}>
-          <SelectTrigger className="w-44 rounded-full bg-white"><SelectValue /></SelectTrigger>
+          <SelectTrigger className="w-48 rounded-full bg-white font-semibold text-xs"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Statuses</SelectItem>
-            <SelectItem value="published">🟢 Published Only</SelectItem>
+            <SelectItem value="all">🌐 All Destinations</SelectItem>
+            <SelectItem value="question_bank">📚 Question Bank Only</SelectItem>
+            <SelectItem value="daily_24h">⚡ Daily 24h Questions Only</SelectItem>
             <SelectItem value="draft">🟡 Drafts Only</SelectItem>
           </SelectContent>
         </Select>
@@ -499,50 +537,79 @@ maths,10,Quadratic,"Discriminant of $ax^2+bx+c$?",typed,,,,,,b^2-4ac,"D = b^2 - 
 
       {/* Questions list */}
       <div className="mt-6 space-y-3">
-        {items.map((q) => (
-          <Card key={q._id} className="rounded-2xl border-slate-200 p-5 flex items-start justify-between gap-4" data-testid={`admin-q-row-${q._id}`}>
-            <div className="flex-1">
-              <div className="flex items-center gap-2 text-xs text-[#64748B] flex-wrap">
-                <span className="uppercase tracking-widest text-[#7C3AED] font-semibold">{q.topic || "No topic"}</span>
-                <span>· Class {q.class_level}</span>
-                <span>· {q.q_type?.toUpperCase()}</span>
-                <span>· +{q.positive_marks}/−{q.negative_marks}</span>
-                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${q.difficulty === "easy" ? "bg-green-100 text-green-700" : q.difficulty === "hard" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"}`}>{q.difficulty}</span>
+        {items.map((q) => {
+          const cat = q.category || (q.is_published === false ? "draft" : "question_bank");
+          return (
+            <Card key={q._id} className="rounded-2xl border-slate-200 p-5 flex items-start justify-between gap-4" data-testid={`admin-q-row-${q._id}`}>
+              <div className="flex-1">
+                <div className="flex items-center gap-2 text-xs text-[#64748B] flex-wrap">
+                  <span className="uppercase tracking-widest text-[#7C3AED] font-semibold">{q.topic || "No topic"}</span>
+                  <span>· Class {q.class_level}</span>
+                  <span>· {q.q_type?.toUpperCase()}</span>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${q.difficulty === "easy" ? "bg-green-100 text-green-700" : q.difficulty === "hard" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"}`}>{q.difficulty}</span>
 
-                {/* Status Badge */}
-                {q.is_published !== false ? (
-                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
-                    <CheckCircle2 size={11} /> Published {q.publish_date || q.published_at?.slice(0, 10) || q.created_at?.slice(0, 10)}
-                  </span>
-                ) : (
-                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-amber-100 text-amber-800 border border-amber-300">
-                    Draft (Unpublished)
-                  </span>
+                  {/* Destination Badge */}
+                  {cat === "daily_24h" ? (
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1">
+                      ⚡ Daily 24h Question
+                    </span>
+                  ) : cat === "draft" || q.is_published === false ? (
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-slate-100 text-slate-700 border border-slate-300">
+                      🟡 Draft (Saved for later)
+                    </span>
+                  ) : (
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-blue-100 text-blue-800 border border-blue-300">
+                      📚 Question Bank
+                    </span>
+                  )}
+                </div>
+                <div className="mt-2 text-[#0F1B4C] font-medium prose-sm max-w-none">
+                  {/^\s*</.test(q.question_text || "") ? <span dangerouslySetInnerHTML={{ __html: q.question_text }} /> : <MathText text={q.question_text} />}
+                </div>
+              </div>
+
+              {/* Destination conversion actions */}
+              <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+                {cat !== "daily_24h" && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => moveToCategory(q._id, "daily_24h")}
+                    className="rounded-full text-xs font-bold border-amber-500 text-amber-800 hover:bg-amber-50 h-8 px-3"
+                  >
+                    ⚡ Publish to Daily 24h
+                  </Button>
                 )}
+                {cat !== "question_bank" && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => moveToCategory(q._id, "question_bank")}
+                    className="rounded-full text-xs font-bold border-blue-500 text-blue-800 hover:bg-blue-50 h-8 px-3"
+                  >
+                    📚 Move to Question Bank
+                  </Button>
+                )}
+                {cat !== "draft" && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => moveToCategory(q._id, "draft")}
+                    className="rounded-full text-xs text-slate-500 hover:bg-slate-100 h-8 px-2"
+                  >
+                    Save Draft
+                  </Button>
+                )}
+                <Button variant="ghost" size="icon" onClick={() => openEditPublished(q)} data-testid={`q-edit-${q._id}`}><Pencil size={16} /></Button>
+                <Button variant="ghost" size="icon" onClick={() => del(q._id)} data-testid={`q-del-${q._id}`}><Trash2 size={16} className="text-red-500" /></Button>
               </div>
-              <div className="mt-2 text-[#0F1B4C] font-medium prose-sm max-w-none">
-                {/^\s*</.test(q.question_text || "") ? <span dangerouslySetInnerHTML={{ __html: q.question_text }} /> : <MathText text={q.question_text} />}
-              </div>
-            </div>
-            <div className="flex items-center gap-1 shrink-0">
-              {q.is_published === false ? (
-                <Button variant="outline" size="sm" onClick={() => togglePublish(q._id)} className="rounded-full text-xs font-semibold border-emerald-500 text-emerald-700 hover:bg-emerald-50 h-8 px-3">
-                  Publish Now
-                </Button>
-              ) : (
-                <Button variant="ghost" size="sm" onClick={() => togglePublish(q._id)} className="rounded-full text-xs text-slate-500 hover:bg-slate-100 h-8 px-2">
-                  Unpublish
-                </Button>
-              )}
-              <Button variant="ghost" size="icon" onClick={() => openEditPublished(q)} data-testid={`q-edit-${q._id}`}><Pencil size={16} /></Button>
-              <Button variant="ghost" size="icon" onClick={() => del(q._id)} data-testid={`q-del-${q._id}`}><Trash2 size={16} className="text-red-500" /></Button>
-            </div>
-          </Card>
-        ))}
+            </Card>
+          );
+        })}
         {items.length === 0 && <div className="text-center text-[#64748B] py-10">No questions found.</div>}
       </div>
-      </div>
-      )}
     </div>
-  );
+  )}
+</div>
+);
 }

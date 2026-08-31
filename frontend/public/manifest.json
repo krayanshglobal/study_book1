@@ -1,15 +1,15 @@
 {
-  "short_name": "StudyBook",
-  "name": "StudyBook — Learn • Focus • Achieve",
+  "short_name": "C Maths",
+  "name": "C Maths — Master Mathematics",
   "icons": [
     {
-      "src": "https://customer-assets-eiarnc6j.emergentagent.net/job_leaderbook-study/artifacts/8fbe1ch1_image.png",
+      "src": "/c_maths_logo.png",
       "type": "image/png",
       "sizes": "512x512",
       "purpose": "any maskable"
     },
     {
-      "src": "https://customer-assets-eiarnc6j.emergentagent.net/job_leaderbook-study/artifacts/8fbe1ch1_image.png",
+      "src": "/c_maths_logo.png",
       "type": "image/png",
       "sizes": "192x192"
     }

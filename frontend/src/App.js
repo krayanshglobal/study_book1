@@ -25,6 +25,7 @@ import Profile from "@/pages/Profile";
 
 import MyAnalytics from "@/pages/MyAnalytics";
 import Explorer from "@/pages/Explorer";
+import DailyPractice from "@/pages/DailyPractice";
 
 import AdminDashboard from "@/pages/admin/AdminDashboard";
 import AdminReferrals from "@/pages/admin/AdminReferrals";
@@ -73,6 +74,7 @@ function App() {
           <Route path="/videos" element={<ProtectedRoute roles={["student"]}><Layout><Videos /></Layout></ProtectedRoute>} />
           <Route path="/leaderboard" element={<ProtectedRoute><Layout><Leaderboard /></Layout></ProtectedRoute>} />
           <Route path="/my-analytics" element={<ProtectedRoute roles={["student"]}><Layout><MyAnalytics /></Layout></ProtectedRoute>} />
+          <Route path="/daily-practice" element={<ProtectedRoute roles={["student"]}><Layout><DailyPractice /></Layout></ProtectedRoute>} />
           <Route path="/referrals" element={<ProtectedRoute roles={["student"]}><Layout><Referrals /></Layout></ProtectedRoute>} />
           <Route path="/pricing" element={<ProtectedRoute roles={["student"]}><Layout><Pricing /></Layout></ProtectedRoute>} />
           <Route path="/payment/success" element={<ProtectedRoute roles={["student"]}><Layout><PaymentSuccess /></Layout></ProtectedRoute>} />

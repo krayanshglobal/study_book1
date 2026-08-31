@@ -62,6 +62,15 @@ export default function TestResult() {
         )}
       </Card>
 
+      {/* Analytics Redirect CTA */}
+      <div className="mt-4 flex justify-end">
+        <Link to="/my-analytics?tab=test">
+          <Button className="rounded-full bg-[#0F1B4C] hover:bg-[#2563EB] text-white font-bold px-6 py-2 text-xs shadow-md">
+            Take me to My Analytics →
+          </Button>
+        </Link>
+      </div>
+
       <div className="mt-10 grid lg:grid-cols-[1fr,320px] gap-6">
         <div>
           <h2 className="font-serif text-2xl text-[#0F1B4C] font-semibold">Review</h2>

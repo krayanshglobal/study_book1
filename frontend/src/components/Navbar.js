@@ -120,7 +120,7 @@ export default function Navbar() {
               className="rounded-full font-serif text-xs font-semibold border-slate-200 text-[#0F1B4C] hover:bg-slate-50 hover:text-[#0F1B4C] flex items-center gap-1 h-8 px-3 shrink-0"
               data-testid="navbar-class-switcher"
             >
-              StudyBook Grade {user.class_level || "?"} <ChevronRight size={14} />
+              C Maths Grade {user.class_level || "?"} <ChevronRight size={14} />
             </Button>
           )}
         </div>

@@ -222,8 +222,8 @@ export default function ManageUsers() {
       <Card className="mt-4 rounded-2xl border-slate-200 overflow-x-auto">
         <div className="min-w-[950px]">
           {/* Header */}
-          <div className="grid grid-cols-[1.2fr,140px,110px,1.5fr,65px,80px,80px,90px] px-5 py-3 bg-slate-50 border-b border-slate-200 text-xs tracking-widest uppercase text-[#64748B] font-semibold gap-3">
-            <div>Name</div><div>Student ID</div><div>Points</div><div>Email & Contact</div><div>Class</div><div>Role</div><div>Premium</div><div>Actions</div>
+          <div className="grid grid-cols-[1.2fr,140px,1.5fr,65px,80px,80px,90px] px-5 py-3 bg-slate-50 border-b border-slate-200 text-xs tracking-widest uppercase text-[#64748B] font-semibold gap-3">
+            <div>Name</div><div>Student ID</div><div>Email & Contact</div><div>Class</div><div>Role</div><div>Premium</div><div>Actions</div>
           </div>
 
           {loading ? (
@@ -237,7 +237,7 @@ export default function ManageUsers() {
             items.map((u) => (
               <div
                 key={u._id}
-                className="grid grid-cols-[1.2fr,140px,110px,1.5fr,65px,80px,80px,90px] px-5 py-3 items-center border-b border-slate-100 last:border-b-0 text-sm gap-3"
+                className="grid grid-cols-[1.2fr,140px,1.5fr,65px,80px,80px,90px] px-5 py-3 items-center border-b border-slate-100 last:border-b-0 text-sm gap-3"
                 data-testid={`user-row-${u._id}`}
               >
                 <div className="flex items-center gap-2.5 min-w-0">
@@ -257,9 +257,6 @@ export default function ManageUsers() {
                 </div>
                 <div className="font-mono text-xs font-bold text-[#2563EB] bg-[#EEF2FF] px-2 py-0.5 rounded border border-[#BFDBFE] w-fit truncate">
                   {u.student_id || "—"}
-                </div>
-                <div className="font-mono text-xs font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded border border-purple-200 w-fit truncate">
-                  ⭐ {u.total_points != null ? Number(u.total_points).toFixed(2).replace(/\.00$/, "") : 0} pts
                 </div>
                 <div className="flex flex-col min-w-0">
                   <span className="text-[#0F1B4C] font-medium truncate">{u.email}</span>

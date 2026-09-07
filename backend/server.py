@@ -102,16 +102,28 @@ app.include_router(study_features_router)
 # CORS
 # ─────────────────────────────────────────
 frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3000")
-cors_origins_str = os.environ.get("CORS_ORIGINS", "*")
-if cors_origins_str == "*":
-    _origins = ["*"]
+cors_origins_str = os.environ.get("CORS_ORIGINS", "")
+
+_default_origins = [
+    "https://student-managment-a4ef3.web.app",
+    "https://student-managment-a4ef3.firebaseapp.com",
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:3000",
+]
+if frontend_url and frontend_url not in _default_origins:
+    _default_origins.append(frontend_url)
+
+if cors_origins_str and cors_origins_str != "*":
+    _origins = list(set([o.strip() for o in cors_origins_str.split(",") if o.strip()] + _default_origins))
 else:
-    _origins = list(set([o.strip() for o in cors_origins_str.split(",") if o.strip()] + [frontend_url, "https://student-managment-a4ef3.web.app", "http://localhost:3000"]))
+    _origins = _default_origins
 
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
     allow_origins=_origins,
+    allow_origin_regex=r"https?://.*",
     allow_methods=["*"],
     allow_headers=["*"],
 )

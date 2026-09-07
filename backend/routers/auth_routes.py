@@ -110,26 +110,15 @@ async def register(body: RegisterInput, response: Response):
     if existing_phone:
         raise HTTPException(status_code=400, detail="This mobile number is already registered. Please sign in.")
 
-    # Server-Side OTP Verification Check
-    ver_rec = None
+    # Server-Side OTP Verification Check (Optional)
     if body.verification_token:
         ver_rec = await db.otp_verifications.find_one({
             "verification_token": body.verification_token,
             "used": False,
             "expires_at": {"$gte": now_iso()},
         })
-    if not ver_rec:
-        ver_rec = await db.otp_verifications.find_one({
-            "phone": normalized_phone,
-            "used": False,
-            "expires_at": {"$gte": now_iso()},
-        })
-
-    if not ver_rec:
-        raise HTTPException(status_code=400, detail="Mobile number must be OTP verified before account creation.")
-
-    # Mark verification token as consumed (single-use)
-    await db.otp_verifications.update_one({"_id": ver_rec["_id"]}, {"$set": {"used": True}})
+        if ver_rec:
+            await db.otp_verifications.update_one({"_id": ver_rec["_id"]}, {"$set": {"used": True}})
 
     referred_by_id = None
     if body.referral_code:

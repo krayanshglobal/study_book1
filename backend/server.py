@@ -64,6 +64,16 @@ from routers.study_features_routes import router as study_features_router
 api_router = APIRouter(prefix="/api")
 
 
+@app.get("/")
+async def root_index():
+    return {
+        "status": "ok",
+        "app": "C Maths API",
+        "health": "/api/health",
+        "docs": "/docs"
+    }
+
+
 @api_router.get("/")
 async def root():
     return {"status": "ok", "app": "C Maths", "version": "1.0"}

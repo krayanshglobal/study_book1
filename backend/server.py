@@ -132,9 +132,9 @@ app.add_middleware(
 # ─────────────────────────────────────────
 # Seed helpers
 # ─────────────────────────────────────────
-async def _seed_user(email_env: str, pass_env: str, name: str, role: str):
-    email = os.environ.get(email_env, "").lower().strip()
-    password = os.environ.get(pass_env, "")
+async def _seed_user(email_env: str, pass_env: str, default_email: str, default_pass: str, name: str, role: str):
+    email = os.environ.get(email_env, default_email).lower().strip()
+    password = os.environ.get(pass_env, default_pass)
     if not email or not password:
         logger.warning(f"Seed skipped: {email_env} or {pass_env} not set")
         return None
@@ -386,8 +386,8 @@ async def _startup():
         logger.info("MongoDB indexes: OK")
 
         # Seed users
-        await _seed_user("ADMIN_EMAIL", "ADMIN_PASSWORD", "Admin", "admin")
-        await _seed_user("SUPERADMIN_EMAIL", "SUPERADMIN_PASSWORD", "Super Admin", "superadmin")
+        await _seed_user("ADMIN_EMAIL", "ADMIN_PASSWORD", "admin@cmaths.com", "Admin@CMaths2026", "Admin", "admin")
+        await _seed_user("SUPERADMIN_EMAIL", "SUPERADMIN_PASSWORD", "superadmin@cmaths.com", "SuperAdmin@CMaths2026", "Super Admin", "superadmin")
 
         # Seed premium student
         existing_premium = await db.users.find_one({"email": "premium@cmaths.com"})

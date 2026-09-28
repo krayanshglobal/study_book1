@@ -83,6 +83,7 @@ android-sdk/frontend/node_modules/.cache/default-development/0.pack
 .env
 .env.*
 *.env
+!**/.env.example
 credentials.json
 *.key
 .credentials
@@ -91,6 +92,7 @@ frontend/node_modules/.cache/default-development/7.pack
 frontend/.firebase/
 
 # Flutter / Dart
+.flutter-sdk/
 mobile/.dart_tool/
 mobile/build/
 mobile/.flutter-plugins
@@ -125,3 +127,7 @@ mobile/build/
 # Node dependencies
 node_modules/
 frontend/node_modules/
+
+# Local repository tooling
+.github-sync/
+.gitconfig

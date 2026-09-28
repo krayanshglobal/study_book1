@@ -76,7 +76,11 @@ class AuthService {
   }) async {
     final resp = await dioClient.post(
       ApiEndpoints.mobileVerifyOtp,
-      data: {'phone': phone, 'otp': otp},
+      data: {
+        'phone': phone,
+        'otp': otp,
+        'verification_only': true,
+      },
     );
     return resp.data as Map<String, dynamic>;
   }

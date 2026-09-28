@@ -433,12 +433,19 @@ class _MobileOtpSheetState extends ConsumerState<_MobileOtpSheet> {
     setState(() => _sending = false);
 
     if (res != null && res['ok'] == true) {
+      final devOtp = res['dev_otp']?.toString();
       setState(() {
         _step = 2;
         _userExists = res['exists'] == true;
+        if (devOtp != null && devOtp.length == 6) {
+          _otpCtrl.text = devOtp;
+        }
       });
       _startTimer();
-      showToast(context, 'OTP sent successfully!');
+      showToast(
+        context,
+        devOtp == null ? 'OTP sent successfully!' : 'Development OTP: $devOtp',
+      );
     } else {
       final err = ref.read(authProvider).error ?? 'Failed to send OTP';
       showToast(context, err, isError: true);

@@ -113,12 +113,14 @@ async def register(body: RegisterInput, response: Response):
     # Server-Side OTP Verification Check (Optional)
     if body.verification_token:
         ver_rec = await db.otp_verifications.find_one({
+            "phone": normalized_phone,
             "verification_token": body.verification_token,
             "used": False,
             "expires_at": {"$gte": now_iso()},
         })
-        if ver_rec:
-            await db.otp_verifications.update_one({"_id": ver_rec["_id"]}, {"$set": {"used": True}})
+        if not ver_rec:
+            raise HTTPException(status_code=400, detail="Phone verification has expired. Please verify your number again.")
+        await db.otp_verifications.update_one({"_id": ver_rec["_id"]}, {"$set": {"used": True}})
 
     referred_by_id = None
     if body.referral_code:
@@ -307,13 +309,32 @@ async def google_login(body: GoogleLoginInput, response: Response):
 async def _send_sms_via_provider(phone_10: str, otp_code: str) -> bool:
     """Send SMS via configured provider in environment variables."""
     provider = (os.environ.get("OTP_PROVIDER") or "").lower().strip()
-    api_key = os.environ.get("OTP_PROVIDER_API_KEY") or os.environ.get("SMS_API_KEY") or os.environ.get("FAST2SMS_API_KEY") or os.environ.get("MSG91_AUTH_KEY")
-    sender_id = os.environ.get("OTP_PROVIDER_SENDER_ID", "STUDYB")
+    if not provider:
+        if os.environ.get("FAST2SMS_API_KEY"):
+            provider = "fast2sms"
+        elif os.environ.get("MSG91_AUTH_KEY"):
+            provider = "msg91"
+        elif os.environ.get("TWO_FACTOR_API_KEY"):
+            provider = "2factor"
+
+    provider_keys = {
+        "fast2sms": os.environ.get("FAST2SMS_API_KEY"),
+        "msg91": os.environ.get("MSG91_AUTH_KEY"),
+        "2factor": os.environ.get("TWO_FACTOR_API_KEY"),
+    }
+    api_key = (
+        os.environ.get("OTP_PROVIDER_API_KEY")
+        or provider_keys.get(provider)
+        or os.environ.get("SMS_API_KEY")
+    )
     template_id = os.environ.get("OTP_PROVIDER_TEMPLATE_ID", "")
 
     if not api_key:
-        logger.info(f"[DEV MODE] No SMS API key configured in environment. OTP for +91{phone_10}: {otp_code}")
-        return True
+        if os.environ.get("OTP_DEV_MODE", "").lower() == "true":
+            logger.warning(f"[OTP DEV MODE] OTP for +91{phone_10}: {otp_code}")
+            return True
+        logger.error("OTP delivery is not configured. Set OTP_PROVIDER and its API key.")
+        return False
 
     phone_91 = f"91{phone_10}"
 
@@ -322,7 +343,7 @@ async def _send_sms_via_provider(phone_10: str, otp_code: str) -> bool:
         import urllib.parse
         import json
 
-        if provider == "fast2sms" or "fast2sms" in api_key.lower():
+        if provider == "fast2sms":
             url = "https://www.fast2sms.com/dev/bulkV2"
             headers = {
                 "authorization": api_key,
@@ -357,8 +378,8 @@ async def _send_sms_via_provider(phone_10: str, otp_code: str) -> bool:
                 return resp_body.get("Status") == "Success"
 
         else:
-            logger.info(f"[SMS DIAGNOSTICS] Provider '{provider}' SMS dispatched for +91{phone_10}")
-            return True
+            logger.error(f"Unsupported OTP_PROVIDER: '{provider}'")
+            return False
 
     except Exception as e:
         logger.error(f"[SMS DIAGNOSTICS ERROR] Failed to send SMS via {provider}: {e}")
@@ -376,8 +397,8 @@ async def mobile_send_otp(body: MobileSendOtpInput):
 
     normalized_phone = digits[-10:]
 
-    cutoff = (datetime.now(timezone.utc) - timedelta(minutes=15)).isoformat()
-    recent_count = await db.otp_codes.count_documents({
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=15)
+    recent_count = await db.otp_send_events.count_documents({
         "phone": normalized_phone,
         "created_at": {"$gte": cutoff},
     })
@@ -402,13 +423,29 @@ async def mobile_send_otp(body: MobileSendOtpInput):
 
     # Dispatch SMS via configured provider
     sms_sent = await _send_sms_via_provider(normalized_phone, otp_code)
+    if not sms_sent:
+        await db.otp_codes.delete_many({"phone": normalized_phone})
+        raise HTTPException(
+            status_code=503,
+            detail="OTP service is currently unavailable. Please try again later.",
+        )
 
-    return {
+    event_time = datetime.now(timezone.utc)
+    await db.otp_send_events.insert_one({
+        "phone": normalized_phone,
+        "created_at": event_time,
+        "expires_at": event_time + timedelta(days=1),
+    })
+
+    result = {
         "ok": True,
         "message": "OTP sent successfully",
         "phone": normalized_phone,
         "exists": user_exists,
     }
+    if os.environ.get("OTP_DEV_MODE", "").lower() == "true":
+        result["dev_otp"] = otp_code
+    return result
 
 
 @router.post("/mobile/verify-otp")
@@ -452,6 +489,15 @@ async def mobile_verify_otp(body: MobileVerifyOtpInput, response: Response):
     })
 
     user = await db.users.find_one({"$or": [{"phone": normalized_phone}, {"phone": raw_phone}]})
+
+    if body.verification_only:
+        return {
+            "ok": True,
+            "verified": True,
+            "verification_token": verification_token,
+            "phone": normalized_phone,
+            "exists": user is not None,
+        }
 
     if user:
         uid = str(user["_id"])

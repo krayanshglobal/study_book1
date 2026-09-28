@@ -2,8 +2,12 @@ class AppConfig {
   static const String appName = 'CMATHS';
   static const String appVersion = '1.0.0';
   
-  // Production backend
-  static String baseUrl = 'https://cmaths-backend.onrender.com';
+  // Override for local/testing builds with:
+  // --dart-define=API_BASE_URL=http://localhost:8001
+  static const String baseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'https://cmaths-backend.onrender.com',
+  );
 
   // Optional Web Client ID for Google Sign-In backend token verification
   static const String googleServerClientId = String.fromEnvironment(

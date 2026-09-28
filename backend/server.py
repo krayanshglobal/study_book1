@@ -382,6 +382,10 @@ async def _startup():
         await db.test_attempts.create_index([("test_id", 1), ("score", -1)])
         await db.login_attempts.create_index("identifier")
         await db.password_reset_tokens.create_index("expires_at", expireAfterSeconds=0)
+        await db.otp_codes.create_index("phone", unique=True)
+        await db.otp_verifications.create_index("verification_token", unique=True)
+        await db.otp_send_events.create_index([("phone", 1), ("created_at", -1)])
+        await db.otp_send_events.create_index("expires_at", expireAfterSeconds=0)
         await db.payment_transactions.create_index("session_id", unique=True)
         logger.info("MongoDB indexes: OK")
 

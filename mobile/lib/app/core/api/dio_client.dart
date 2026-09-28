@@ -3,7 +3,6 @@ import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path_provider/path_provider.dart';
 import '../config/app_config.dart';
 import '../services/storage_service.dart';
 
@@ -33,18 +32,18 @@ String formatApiError(dynamic err) {
 
 class DioClient {
   late final Dio dio;
-  late final PersistCookieJar _cookieJar;
+  late final CookieJar _cookieJar;
   UnauthorizedCallback? onUnauthorized;
 
   DioClient._internal(this.dio, this._cookieJar);
 
-  /// Must be called once at app startup (after path_provider is ready)
+  /// Must be called once at app startup.
+  ///
+  /// Session tokens are persisted by [StorageService], so cookies can remain
+  /// in memory. Keeping this client filesystem-free also makes initialization
+  /// safe on Flutter web, where path_provider has no documents-directory API.
   static Future<DioClient> create() async {
-    final appDir = await getApplicationDocumentsDirectory();
-    final cookieJar = PersistCookieJar(
-      storage: FileStorage('${appDir.path}/.cookies/'),
-      ignoreExpires: true,
-    );
+    final cookieJar = CookieJar(ignoreExpires: true);
 
     final dio = Dio(
       BaseOptions(
@@ -59,7 +58,11 @@ class DioClient {
     );
 
     // Cookie manager — persists cookies across launches
-    dio.interceptors.add(CookieManager(cookieJar));
+    // dio_cookie_manager is native-only. Browsers manage their own cookies,
+    // while API authentication is also carried by the bearer-token interceptor.
+    if (!kIsWeb) {
+      dio.interceptors.add(CookieManager(cookieJar));
+    }
 
     final client = DioClient._internal(dio, cookieJar);
 

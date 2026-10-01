@@ -1,11 +1,12 @@
 plugins {
     id("com.android.application")
+    id("com.google.gms.google-services")
     // Flutter Gradle Plugin must be applied after the Android plugin.
     id("dev.flutter.flutter-gradle-plugin")
 }
 
 android {
-    namespace = "com.studybook.studybook_mobile"
+    namespace = "com.krayansh.studybook"
     compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
@@ -19,7 +20,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.studybook.studybook_mobile"
+        applicationId = "com.krayansh.studybook"
         minSdk = flutter.minSdkVersion
         targetSdk = 36
         versionCode = flutter.versionCode

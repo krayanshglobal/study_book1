@@ -1,4 +1,4 @@
-package com.studybook.studybook_mobile
+package com.krayansh.studybook
 
 import io.flutter.embedding.android.FlutterActivity
 

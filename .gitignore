@@ -90,6 +90,10 @@ credentials.json
 frontend/node_modules/.cache/default-development/7.pack
 # Firebase
 frontend/.firebase/
+mobile/android/app/google-services.json
+mobile/ios/Runner/GoogleService-Info.plist
+firebase-service-account*.json
+*-firebase-adminsdk-*.json
 
 # Flutter / Dart
 .flutter-sdk/

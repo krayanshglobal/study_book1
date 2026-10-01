@@ -2,6 +2,7 @@
 import os
 import secrets
 import base64
+import json
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Request, Response, Depends, UploadFile, File
@@ -12,6 +13,7 @@ from models import (
     GoogleLoginInput,
     MobileSendOtpInput,
     MobileVerifyOtpInput,
+    FirebasePhoneAuthInput,
     ForgotPasswordInput,
     ResetPasswordInput,
     ChangePasswordInput,
@@ -32,10 +34,35 @@ from auth import (
     require_role,
 )
 import logging
+from starlette.concurrency import run_in_threadpool
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+
+def _initialize_firebase_admin():
+    """Initialize Firebase Admin lazily so other login methods stay independent."""
+    try:
+        import firebase_admin
+        from firebase_admin import credentials
+    except ImportError as exc:
+        raise RuntimeError("firebase-admin is not installed") from exc
+
+    try:
+        return firebase_admin.get_app()
+    except ValueError:
+        pass
+
+    service_account_json = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON", "").strip()
+    if service_account_json:
+        try:
+            service_account = json.loads(service_account_json)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("FIREBASE_SERVICE_ACCOUNT_JSON is invalid JSON") from exc
+        return firebase_admin.initialize_app(credentials.Certificate(service_account))
+
+    return firebase_admin.initialize_app()
 
 
 def _serialize_user(u: dict, access_token: str = None, refresh_token: str = None) -> dict:
@@ -446,6 +473,140 @@ async def mobile_send_otp(body: MobileSendOtpInput):
     if os.environ.get("OTP_DEV_MODE", "").lower() == "true":
         result["dev_otp"] = otp_code
     return result
+
+
+@router.post("/mobile/account-status")
+async def mobile_account_status(body: MobileSendOtpInput):
+    """Preserve the current new-student UI without sending an SMS."""
+    from server import db
+
+    raw_phone = body.phone.strip()
+    digits = "".join(c for c in raw_phone if c.isdigit())
+    if len(digits) < 10:
+        raise HTTPException(status_code=400, detail="Phone number must be at least 10 digits")
+    normalized_phone = digits[-10:]
+    user = await db.users.find_one({
+        "$or": [{"phone": normalized_phone}, {"phone": raw_phone}]
+    })
+    return {"ok": True, "exists": user is not None}
+
+
+@router.post("/mobile/firebase")
+async def firebase_mobile_auth(body: FirebasePhoneAuthInput, response: Response):
+    """Exchange a Firebase-verified phone identity for the existing app JWTs."""
+    from server import db
+
+    try:
+        _initialize_firebase_admin()
+        from firebase_admin import auth as firebase_auth
+        decoded = await run_in_threadpool(
+            firebase_auth.verify_id_token,
+            body.id_token,
+            check_revoked=True,
+        )
+    except Exception as exc:
+        logger.warning("Firebase phone token verification failed: %s", exc)
+        raise HTTPException(
+            status_code=401,
+            detail="Phone verification is invalid or has expired.",
+        ) from exc
+
+    sign_in_provider = decoded.get("firebase", {}).get("sign_in_provider")
+    phone_e164 = decoded.get("phone_number")
+    firebase_uid = decoded.get("uid") or decoded.get("sub")
+    if sign_in_provider != "phone" or not phone_e164 or not firebase_uid:
+        raise HTTPException(status_code=401, detail="A verified Firebase phone token is required.")
+
+    digits = "".join(c for c in str(phone_e164) if c.isdigit())
+    if len(digits) < 10:
+        raise HTTPException(status_code=400, detail="Firebase returned an invalid phone number.")
+    normalized_phone = digits[-10:]
+
+    user = await db.users.find_one({
+        "$or": [
+            {"firebase_uid": firebase_uid},
+            {"phone": normalized_phone},
+            {"phone": phone_e164},
+        ]
+    })
+
+    if body.verification_only:
+        verification_token = secrets.token_hex(16)
+        await db.otp_verifications.delete_many({"phone": normalized_phone})
+        await db.otp_verifications.insert_one({
+            "phone": normalized_phone,
+            "firebase_uid": firebase_uid,
+            "verification_token": verification_token,
+            "created_at": now_iso(),
+            "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=20)).isoformat(),
+            "used": False,
+        })
+        return {
+            "ok": True,
+            "verified": True,
+            "verification_token": verification_token,
+            "phone": normalized_phone,
+            "exists": user is not None,
+        }
+
+    if user:
+        uid = str(user["_id"])
+        if user.get("firebase_uid") != firebase_uid:
+            await db.users.update_one(
+                {"_id": user["_id"]},
+                {"$set": {"firebase_uid": firebase_uid, "phone": normalized_phone}},
+            )
+            user["firebase_uid"] = firebase_uid
+            user["phone"] = normalized_phone
+    else:
+        referred_by_id = None
+        if body.referral_code:
+            ref_user = await db.users.find_one({
+                "referral_code": body.referral_code.strip().upper()
+            })
+            if ref_user:
+                referred_by_id = str(ref_user["_id"])
+
+        student_id = await _generate_student_id(db, body.class_level or "10")
+        name = (
+            body.name.strip()
+            if body.name and body.name.strip()
+            else f"Student {normalized_phone[-4:]}"
+        )
+        email = f"user_{normalized_phone}@studybook.com"
+        user = {
+            "name": name,
+            "email": email,
+            "phone": normalized_phone,
+            "firebase_uid": firebase_uid,
+            "password_hash": "",
+            "role": "student",
+            "class_level": body.class_level or "10",
+            "student_id": student_id,
+            "referral_code": generate_referral_code(),
+            "referred_by": referred_by_id,
+            "subscription_active": False,
+            "subscription_expires_at": None,
+            "total_points": 0,
+            "avatar_url": "",
+            "created_at": now_iso(),
+        }
+        result = await db.users.insert_one(user)
+        uid = str(result.inserted_id)
+        user["_id"] = result.inserted_id
+
+        if referred_by_id:
+            await db.referrals.insert_one({
+                "referrer_id": referred_by_id,
+                "referred_user_id": uid,
+                "created_at": now_iso(),
+                "reward_credited": False,
+            })
+
+    access = create_access_token(uid, user["email"], user["role"])
+    refresh = create_refresh_token(uid)
+    set_auth_cookies(response, access, refresh)
+    return _serialize_user(user, access_token=access, refresh_token=refresh)
 
 
 @router.post("/mobile/verify-otp")

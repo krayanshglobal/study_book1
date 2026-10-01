@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'app/core/api/dio_client.dart';
+import 'app/core/config/firebase_config.dart';
 import 'app/core/theme/app_colors.dart';
 import 'app/core/theme/app_theme.dart';
 import 'app/features/auth/providers/auth_provider.dart';
@@ -11,6 +12,7 @@ import 'app/features/common/routes/app_router.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await FirebaseConfig.initialize();
   // Initialize the cookie-based Dio client once at startup
   dioClient = await DioClient.create();
 

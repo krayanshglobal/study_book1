@@ -5,6 +5,8 @@ class ApiEndpoints {
   static const String googleLogin = '/api/auth/google';
   static const String mobileSendOtp = '/api/auth/mobile/send-otp';
   static const String mobileVerifyOtp = '/api/auth/mobile/verify-otp';
+  static const String firebasePhoneAuth = '/api/auth/mobile/firebase';
+  static const String mobileAccountStatus = '/api/auth/mobile/account-status';
   static const String me = '/api/auth/me';
   static const String logout = '/api/auth/logout';
   static const String refresh = '/api/auth/refresh';

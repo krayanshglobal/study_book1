@@ -48,6 +48,14 @@ class MobileVerifyOtpInput(BaseModel):
     verification_only: bool = False
 
 
+class FirebasePhoneAuthInput(BaseModel):
+    id_token: str
+    name: Optional[str] = None
+    class_level: Optional[Literal["8", "9", "10"]] = None
+    referral_code: Optional[str] = None
+    verification_only: bool = False
+
+
 class ForgotPasswordInput(BaseModel):
     email: EmailStr
 

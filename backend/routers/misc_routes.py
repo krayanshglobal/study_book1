@@ -4,11 +4,21 @@ from fastapi import APIRouter, HTTPException, Depends, Request, Query
 from bson import ObjectId
 from typing import Optional
 from models import (
-    VideoCreate, VideoUpdate, PlanCreate, PlanUpdate, CheckoutInput,
+    VideoCreate, VideoUpdate, PlanCreate, PlanUpdate, CheckoutInput, RazorpayVerifyInput,
     AnnouncementCreate, UserUpdateAdmin, SubscriptionPatch, now_iso,
 )
 from auth import get_current_user, require_role, hash_password
 import logging
+from decimal import Decimal, ROUND_HALF_UP
+from pymongo import ReturnDocument
+from starlette.concurrency import run_in_threadpool
+
+from razorpay_gateway import (
+    RazorpayGateway,
+    RazorpayGatewayError,
+    decode_webhook,
+    verify_webhook_signature,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -404,63 +414,186 @@ async def delete_plan(pid: str, _=Depends(require_role("admin", "superadmin"))):
     return {"ok": True}
 
 
-# =============== PAYMENTS (STRIPE) ===============
-@router.post("/api/payments/checkout")
-async def create_checkout(body: CheckoutInput, request: Request, user=Depends(get_current_user)):
+# =============== PAYMENTS (RAZORPAY) ===============
+def _gateway_or_http_error() -> RazorpayGateway:
+    try:
+        return RazorpayGateway()
+    except RazorpayGatewayError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+async def _activate_paid_subscription(tx: dict, payment: dict) -> None:
+    """Activate a plan exactly once, even if callback and webhook race."""
     from server import db
-    from emergentintegrations.payments.stripe.checkout import (
-        StripeCheckout, CheckoutSessionRequest,
+
+    claimed = await db.payment_transactions.find_one_and_update(
+        {
+            "_id": tx["_id"],
+            "payment_status": {"$nin": ["paid", "processing"]},
+        },
+        {"$set": {"payment_status": "processing", "status": payment.get("status")}},
+        return_document=ReturnDocument.AFTER,
     )
-    import os
+    if not claimed:
+        return
+
+    try:
+        duration = int(tx.get("metadata", {}).get("duration_days", 30))
+        expires = datetime.now(timezone.utc) + timedelta(days=duration)
+        await db.users.update_one(
+            {"_id": _safe_oid(tx["user_id"], "user ID")},
+            {"$set": {
+                "subscription_active": True,
+                "subscription_expires_at": expires.isoformat(),
+            }},
+        )
+        await db.payment_transactions.update_one(
+            {"_id": tx["_id"]},
+            {"$set": {
+                "payment_status": "paid",
+                "status": payment.get("status", "captured"),
+                "payment_id": payment.get("id"),
+                "payment_method": payment.get("method"),
+                "processed_at": now_iso(),
+            }},
+        )
+    except Exception:
+        await db.payment_transactions.update_one(
+            {"_id": tx["_id"]},
+            {"$set": {"payment_status": "activation_failed"}},
+        )
+        raise
+
+
+def _validate_payment_for_transaction(payment: dict, tx: dict) -> None:
+    if payment.get("order_id") != tx.get("order_id"):
+        raise HTTPException(status_code=400, detail="Payment order does not match")
+    if int(payment.get("amount", -1)) != int(tx.get("amount_subunits", -2)):
+        raise HTTPException(status_code=400, detail="Payment amount does not match")
+    if str(payment.get("currency", "")).upper() != str(tx.get("currency", "")).upper():
+        raise HTTPException(status_code=400, detail="Payment currency does not match")
+
+
+@router.post("/api/payments/checkout")
+async def create_checkout(body: CheckoutInput, user=Depends(get_current_user)):
+    from server import db
 
     oid = _safe_oid(body.plan_id, "plan ID")
     plan = await db.plans.find_one({"_id": oid, "is_active": True})
     if not plan:
         raise HTTPException(status_code=404, detail="Plan not found")
 
-    host_url = str(request.base_url)
-    webhook_url = f"{host_url.rstrip('/')}/api/webhook/stripe"
-    checkout = StripeCheckout(api_key=os.environ["STRIPE_API_KEY"], webhook_url=webhook_url)
+    amount = Decimal(str(plan["price"]))
+    amount_subunits = int((amount * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+    if amount_subunits < 100:
+        raise HTTPException(status_code=400, detail="Plan price must be at least INR 1")
+    currency = str(plan.get("currency", "INR")).upper()
+    if currency != "INR":
+        raise HTTPException(status_code=400, detail="Only INR plans are currently supported")
 
-    amount = float(plan["price"])
-    currency = plan.get("currency", "inr")
-    origin = body.origin_url.rstrip("/")
-    success_url = f"{origin}/payment/success?session_id={{CHECKOUT_SESSION_ID}}"
-    cancel_url = f"{origin}/pricing"
+    gateway = _gateway_or_http_error()
+    receipt = f"cm_{str(plan['_id'])[-8:]}_{int(datetime.now().timestamp())}"
+    try:
+        order = await run_in_threadpool(
+            gateway.create_order,
+            amount=amount_subunits,
+            currency=currency,
+            receipt=receipt,
+            notes={
+                "user_id": user["_id"],
+                "plan_id": str(plan["_id"]),
+                "plan_name": str(plan["name"])[:250],
+            },
+        )
+    except RazorpayGatewayError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
-    req = CheckoutSessionRequest(
-        amount=amount,
-        currency=currency,
-        success_url=success_url,
-        cancel_url=cancel_url,
-        metadata={
-            "user_id": user["_id"],
-            "plan_id": str(plan["_id"]),
-            "plan_name": plan["name"],
-        },
-    )
-    session = await checkout.create_checkout_session(req)
+    if not order.get("id"):
+        raise HTTPException(status_code=502, detail="Razorpay returned an invalid order")
 
-    await db.payment_transactions.insert_one({
+    transaction = {
         "user_id": user["_id"],
         "plan_id": str(plan["_id"]),
-        "session_id": session.session_id,
-        "amount": amount,
+        "provider": "razorpay",
+        "session_id": order["id"],
+        "order_id": order["id"],
+        "amount": float(amount),
+        "amount_subunits": amount_subunits,
         "currency": currency,
         "payment_status": "initiated",
-        "status": "pending",
+        "status": order.get("status", "created"),
         "metadata": {"plan_name": plan["name"], "duration_days": plan["duration_days"]},
         "created_at": now_iso(),
-    })
+    }
+    await db.payment_transactions.insert_one(transaction)
 
-    return {"url": session.url, "session_id": session.session_id}
+    return {
+        "provider": "razorpay",
+        "key_id": gateway.key_id,
+        "order_id": order["id"],
+        "session_id": order["id"],
+        "amount": amount_subunits,
+        "currency": currency,
+        "name": "C Maths",
+        "description": plan["name"],
+        "prefill": {
+            "name": user.get("name", ""),
+            "email": user.get("email", ""),
+            "contact": user.get("phone", ""),
+        },
+    }
+
+
+@router.post("/api/payments/verify")
+async def verify_payment(body: RazorpayVerifyInput, user=Depends(get_current_user)):
+    from server import db
+
+    tx = await db.payment_transactions.find_one({
+        "order_id": body.razorpay_order_id,
+        "user_id": user["_id"],
+        "provider": "razorpay",
+    })
+    if not tx:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+
+    gateway = _gateway_or_http_error()
+    if not gateway.verify_payment_signature(
+        order_id=tx["order_id"],
+        payment_id=body.razorpay_payment_id,
+        signature=body.razorpay_signature,
+    ):
+        raise HTTPException(status_code=400, detail="Invalid Razorpay payment signature")
+
+    try:
+        payment = await run_in_threadpool(
+            gateway.fetch_payment, body.razorpay_payment_id
+        )
+        _validate_payment_for_transaction(payment, tx)
+        if payment.get("status") == "authorized":
+            payment = await run_in_threadpool(
+                gateway.capture_payment,
+                body.razorpay_payment_id,
+                amount=tx["amount_subunits"],
+                currency=tx["currency"],
+            )
+            _validate_payment_for_transaction(payment, tx)
+        if payment.get("status") != "captured":
+            raise HTTPException(status_code=409, detail="Payment has not been captured")
+        await _activate_paid_subscription(tx, payment)
+    except RazorpayGatewayError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+    return {
+        "ok": True,
+        "payment_status": "paid",
+        "status": payment.get("status"),
+        "session_id": tx["order_id"],
+    }
 
 
 @router.get("/api/payments/status/{session_id}")
 async def payment_status(session_id: str, user=Depends(get_current_user)):
     from server import db
-    from emergentintegrations.payments.stripe.checkout import StripeCheckout
-    import os
 
     tx = await db.payment_transactions.find_one({"session_id": session_id, "user_id": user["_id"]})
     if not tx:
@@ -470,74 +603,42 @@ async def payment_status(session_id: str, user=Depends(get_current_user)):
         return {
             "payment_status": "paid",
             "status": tx.get("status"),
-            "amount_total": int(tx["amount"] * 100),
+            "amount_total": tx.get("amount_subunits", int(tx["amount"] * 100)),
             "currency": tx["currency"],
         }
 
-    checkout = StripeCheckout(api_key=os.environ["STRIPE_API_KEY"], webhook_url="")
-    status = await checkout.get_checkout_status(session_id)
-
-    if status.payment_status == "paid" and tx.get("payment_status") != "paid":
-        duration = int(tx["metadata"].get("duration_days", 30))
-        expires = datetime.now(timezone.utc) + timedelta(days=duration)
-        uid_oid = _safe_oid(user["_id"], "user ID")
-        await db.users.update_one(
-            {"_id": uid_oid},
-            {"$set": {"subscription_active": True, "subscription_expires_at": expires.isoformat()}},
-        )
-        await db.payment_transactions.update_one(
-            {"session_id": session_id},
-            {"$set": {
-                "payment_status": "paid",
-                "status": status.status,
-                "processed_at": now_iso(),
-            }},
-        )
-    else:
-        await db.payment_transactions.update_one(
-            {"session_id": session_id},
-            {"$set": {"payment_status": status.payment_status, "status": status.status}},
-        )
-
     return {
-        "payment_status": status.payment_status,
-        "status": status.status,
-        "amount_total": status.amount_total,
-        "currency": status.currency,
+        "payment_status": tx.get("payment_status", "initiated"),
+        "status": tx.get("status", "created"),
+        "amount_total": tx.get("amount_subunits", int(tx.get("amount", 0) * 100)),
+        "currency": tx.get("currency", "INR"),
     }
 
 
-@router.post("/api/webhook/stripe")
-async def stripe_webhook(request: Request):
+@router.post("/api/webhook/razorpay")
+async def razorpay_webhook(request: Request):
     from server import db
-    from emergentintegrations.payments.stripe.checkout import StripeCheckout
-    import os
 
     body = await request.body()
-    signature = request.headers.get("Stripe-Signature", "")
-    checkout = StripeCheckout(api_key=os.environ["STRIPE_API_KEY"], webhook_url="")
+    signature = request.headers.get("X-Razorpay-Signature", "")
     try:
-        evt = await checkout.handle_webhook(body, signature)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Webhook error: {e}")
+        if not signature or not verify_webhook_signature(body, signature):
+            raise HTTPException(status_code=400, detail="Invalid webhook signature")
+        event = decode_webhook(body)
+    except RazorpayGatewayError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
-    if evt.payment_status == "paid":
-        tx = await db.payment_transactions.find_one({"session_id": evt.session_id})
-        if tx and tx.get("payment_status") != "paid":
-            duration = int(tx["metadata"].get("duration_days", 30))
-            expires = datetime.now(timezone.utc) + timedelta(days=duration)
-            try:
-                uid_oid = ObjectId(tx["user_id"])
-                await db.users.update_one(
-                    {"_id": uid_oid},
-                    {"$set": {"subscription_active": True, "subscription_expires_at": expires.isoformat()}},
-                )
-            except Exception as e:
-                logger.error(f"Stripe webhook: failed to activate subscription for user {tx['user_id']}: {e}")
-            await db.payment_transactions.update_one(
-                {"session_id": evt.session_id},
-                {"$set": {"payment_status": "paid", "processed_at": now_iso()}},
-            )
+    if event.get("event") in {"payment.captured", "order.paid"}:
+        payment = (
+            event.get("payload", {}).get("payment", {}).get("entity", {})
+        )
+        order_id = payment.get("order_id")
+        if order_id:
+            tx = await db.payment_transactions.find_one({"order_id": order_id})
+            if tx:
+                _validate_payment_for_transaction(payment, tx)
+                if payment.get("status") == "captured":
+                    await _activate_paid_subscription(tx, payment)
     return {"ok": True}
 
 

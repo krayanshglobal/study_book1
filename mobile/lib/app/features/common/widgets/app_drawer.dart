@@ -79,7 +79,7 @@ class AppDrawer extends ConsumerWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'StudyBook',
+                              'C Maths',
                               style: GoogleFonts.fraunces(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w700,
@@ -747,7 +747,7 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
                   ),
                 ),
 
-          // Title: Logo + "StudyBook"
+          // Title: Logo + "C Maths"
           title: widget.showBack
               ? Text(
                   widget.title,
@@ -767,7 +767,7 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
                         colors: [AppColors.navy, AppColors.blue],
                       ).createShader(bounds),
                       child: Text(
-                        'StudyBook',
+                        'C Maths',
                         style: GoogleFonts.fraunces(
                           fontSize: 20,
                           fontWeight: FontWeight.w700,

@@ -183,7 +183,7 @@ class _State extends ConsumerState<StudentDashboardScreen> {
     final referralCode = _refs?['referral_code'] as String? ?? '';
 
     return MainScaffold(
-      title: 'StudyBook',
+      title: 'C Maths',
       body: _loading
           ? const LoadingIndicator()
           : RefreshIndicator(

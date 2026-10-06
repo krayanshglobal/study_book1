@@ -195,7 +195,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen>
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            'Join StudyBook and start learning smarter.',
+                            'Join C Maths and start learning smarter.',
                             textAlign: TextAlign.center,
                             style: GoogleFonts.inter(
                                 fontSize: 14,

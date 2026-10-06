@@ -26,7 +26,7 @@ class LandingScreen extends StatelessWidget {
                   children: [
                     const AppLogo(size: 36),
                     const SizedBox(width: 10),
-                    Text('StudyBook',
+                    Text('C Maths',
                         style: GoogleFonts.fraunces(
                             fontWeight: FontWeight.w700, fontSize: 18, color: AppColors.navy)),
                     const Spacer(),
@@ -173,7 +173,7 @@ class LandingScreen extends StatelessWidget {
                         style: GoogleFonts.fraunces(
                             fontSize: 24, fontWeight: FontWeight.w600, color: Colors.white)),
                     const SizedBox(height: 8),
-                    Text('Join thousands of students already using StudyBook.',
+                    Text('Join thousands of students already using C Maths.',
                         textAlign: TextAlign.center,
                         style: GoogleFonts.inter(fontSize: 13, color: Colors.white60)),
                     const SizedBox(height: 20),

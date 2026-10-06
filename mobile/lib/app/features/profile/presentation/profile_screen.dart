@@ -396,7 +396,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       items: [
                         _MenuItem(
                           icon: Icons.info_outline_rounded,
-                          label: 'About StudyBook',
+                          label: 'About C Maths',
                           onTap: () {},
                         ),
                         _MenuItem(

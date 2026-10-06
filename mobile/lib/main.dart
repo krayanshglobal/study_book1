@@ -18,7 +18,7 @@ void main() async {
 
   runApp(
     const ProviderScope(
-      child: StudyBookApp(),
+      child: CMathsApp(),
     ),
   );
 }
@@ -29,11 +29,11 @@ void main() async {
 /// to pop, causing immediate exit. This dispatcher intercepts the back button
 /// at the app level, shows a snackbar on first press, and exits on second
 /// press within 2 seconds.
-class StudyBookBackButtonDispatcher extends RootBackButtonDispatcher {
+class CMathsBackButtonDispatcher extends RootBackButtonDispatcher {
   final GlobalKey<ScaffoldMessengerState> scaffoldMessengerKey;
   DateTime? _lastBackPress;
 
-  StudyBookBackButtonDispatcher({required this.scaffoldMessengerKey});
+  CMathsBackButtonDispatcher({required this.scaffoldMessengerKey});
 
   @override
   Future<bool> didPopRoute() async {
@@ -74,23 +74,23 @@ class StudyBookBackButtonDispatcher extends RootBackButtonDispatcher {
   }
 }
 
-class StudyBookApp extends ConsumerStatefulWidget {
-  const StudyBookApp({super.key});
+class CMathsApp extends ConsumerStatefulWidget {
+  const CMathsApp({super.key});
 
   @override
-  ConsumerState<StudyBookApp> createState() => _StudyBookAppState();
+  ConsumerState<CMathsApp> createState() => _CMathsAppState();
 }
 
-class _StudyBookAppState extends ConsumerState<StudyBookApp>
+class _CMathsAppState extends ConsumerState<CMathsApp>
     with WidgetsBindingObserver {
   final _scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
-  late final StudyBookBackButtonDispatcher _backButtonDispatcher;
+  late final CMathsBackButtonDispatcher _backButtonDispatcher;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _backButtonDispatcher = StudyBookBackButtonDispatcher(
+    _backButtonDispatcher = CMathsBackButtonDispatcher(
       scaffoldMessengerKey: _scaffoldMessengerKey,
     );
   }
@@ -116,7 +116,7 @@ class _StudyBookAppState extends ConsumerState<StudyBookApp>
     final router = ref.watch(routerProvider);
 
     return MaterialApp.router(
-      title: 'StudyBook',
+      title: 'C Maths',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
       routerDelegate: router.routerDelegate,

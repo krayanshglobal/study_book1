@@ -8,8 +8,25 @@ import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { inr } from "@/lib/format";
 
+const loadRazorpayCheckout = () => new Promise((resolve, reject) => {
+  if (window.Razorpay) { resolve(true); return; }
+  const existing = document.querySelector('script[data-razorpay-checkout]');
+  if (existing) {
+    existing.addEventListener("load", () => resolve(true), { once: true });
+    existing.addEventListener("error", () => reject(new Error("Could not load Razorpay Checkout")), { once: true });
+    return;
+  }
+  const script = document.createElement("script");
+  script.src = "https://checkout.razorpay.com/v1/checkout.js";
+  script.async = true;
+  script.dataset.razorpayCheckout = "true";
+  script.onload = () => resolve(true);
+  script.onerror = () => reject(new Error("Could not load Razorpay Checkout"));
+  document.body.appendChild(script);
+});
+
 export default function Pricing() {
-  const { user, refresh } = useAuth();
+  const { user } = useAuth();
   const [plans, setPlans] = useState([]);
   const [busy, setBusy] = useState(null);
 
@@ -18,11 +35,36 @@ export default function Pricing() {
   const subscribe = async (plan) => {
     setBusy(plan._id);
     try {
+      await loadRazorpayCheckout();
       const r = await api.post("/api/payments/checkout", {
         plan_id: plan._id,
-        origin_url: window.location.origin,
       });
-      window.location.href = r.data.url;
+      const checkout = r.data;
+      const razorpay = new window.Razorpay({
+        key: checkout.key_id,
+        amount: checkout.amount,
+        currency: checkout.currency,
+        name: checkout.name,
+        description: checkout.description,
+        order_id: checkout.order_id,
+        prefill: checkout.prefill,
+        theme: { color: "#2563EB" },
+        handler: async (response) => {
+          try {
+            await api.post("/api/payments/verify", response);
+            window.location.assign(`/payment/success?session_id=${encodeURIComponent(checkout.order_id)}`);
+          } catch (err) {
+            toast.error(formatApiError(err));
+            setBusy(null);
+          }
+        },
+        modal: { ondismiss: () => setBusy(null) },
+      });
+      razorpay.on("payment.failed", (response) => {
+        toast.error(response?.error?.description || "Payment failed. Please try again.");
+        setBusy(null);
+      });
+      razorpay.open();
     } catch (err) {
       toast.error(formatApiError(err));
       setBusy(null);
@@ -70,7 +112,7 @@ export default function Pricing() {
               data-testid={`plan-subscribe-${p._id}`}
               className={`mt-8 w-full rounded-full py-6 ${i === 1 ? "bg-[#7C3AED] hover:bg-[#6D28D9]" : "bg-[#0F1B4C] hover:bg-[#2563EB]"}`}
             >
-              {user?.subscription_active ? "Already premium" : busy === p._id ? "Redirecting…" : "Subscribe"}
+              {user?.subscription_active ? "Already premium" : busy === p._id ? "Opening payment…" : "Subscribe"}
             </Button>
           </Card>
         ))}

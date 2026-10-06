@@ -7,14 +7,14 @@ class PricingState {
   final List<PlanModel> plans;
   final bool isLoading;
   final bool isCheckingOut;
-  final String? checkoutUrl;
+  final Map<String, dynamic>? checkoutData;
   final String? error;
 
   PricingState({
     this.plans = const [],
     this.isLoading = false,
     this.isCheckingOut = false,
-    this.checkoutUrl,
+    this.checkoutData,
     this.error,
   });
 
@@ -22,14 +22,14 @@ class PricingState {
     List<PlanModel>? plans,
     bool? isLoading,
     bool? isCheckingOut,
-    String? checkoutUrl,
+    Map<String, dynamic>? checkoutData,
     String? error,
   }) {
     return PricingState(
       plans: plans ?? this.plans,
       isLoading: isLoading ?? this.isLoading,
       isCheckingOut: isCheckingOut ?? this.isCheckingOut,
-      checkoutUrl: checkoutUrl ?? this.checkoutUrl,
+      checkoutData: checkoutData ?? this.checkoutData,
       error: error,
     );
   }
@@ -56,20 +56,17 @@ class PricingNotifier extends StateNotifier<PricingState> {
     }
   }
 
-  Future<String?> checkout(String planId) async {
+  Future<Map<String, dynamic>?> checkout(String planId) async {
     state = state.copyWith(isCheckingOut: true, error: null);
     try {
       final dio = ref.read(dioClientProvider);
       final res = await dio.post(
         ApiEndpoints.checkout,
-        data: {
-          'plan_id': planId,
-          'origin_url': 'https://studybook.app',
-        },
+        data: {'plan_id': planId},
       );
-      final url = res.data['url']?.toString();
-      state = state.copyWith(isCheckingOut: false, checkoutUrl: url);
-      return url;
+      final data = Map<String, dynamic>.from(res.data as Map);
+      state = state.copyWith(isCheckingOut: false, checkoutData: data);
+      return data;
     } catch (e) {
       state = state.copyWith(isCheckingOut: false, error: e.toString());
       return null;
@@ -77,6 +74,7 @@ class PricingNotifier extends StateNotifier<PricingState> {
   }
 }
 
-final pricingProvider = StateNotifierProvider<PricingNotifier, PricingState>((ref) {
+final pricingProvider =
+    StateNotifierProvider<PricingNotifier, PricingState>((ref) {
   return PricingNotifier(ref);
 });

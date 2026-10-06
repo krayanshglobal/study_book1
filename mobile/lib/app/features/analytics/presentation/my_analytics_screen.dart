@@ -296,7 +296,7 @@ class _MyAnalyticsScreenState extends ConsumerState<MyAnalyticsScreen>
                             ),
                             const SizedBox(height: 24),
 
-                            // Primary Button: Upgrade to StudyBook Premium >
+                            // Primary Button: Upgrade to C Maths Premium >
                             Material(
                               color: Colors.transparent,
                               child: InkWell(
@@ -321,7 +321,7 @@ class _MyAnalyticsScreenState extends ConsumerState<MyAnalyticsScreen>
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
                                       Text(
-                                        'Upgrade to StudyBook Premium',
+                                        'Upgrade to C Maths Premium',
                                         style: GoogleFonts.inter(
                                           fontSize: 13.5,
                                           fontWeight: FontWeight.w600,

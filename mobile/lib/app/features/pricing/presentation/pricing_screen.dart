@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:razorpay_flutter/razorpay_flutter.dart';
 
 import '../../../core/api/api_endpoints.dart';
 import '../../../core/api/dio_client.dart';
-import '../../../core/config/app_config.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../common/widgets/app_drawer.dart';
@@ -22,11 +22,23 @@ class _PricingScreenState extends ConsumerState<PricingScreen> {
   List _plans = [];
   bool _loading = true;
   String? _subscribingId;
+  String? _pendingOrderId;
+  late final Razorpay _razorpay;
 
   @override
   void initState() {
     super.initState();
+    _razorpay = Razorpay();
+    _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, _handlePaymentSuccess);
+    _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, _handlePaymentError);
+    _razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, _handleExternalWallet);
     _load();
+  }
+
+  @override
+  void dispose() {
+    _razorpay.clear();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -51,21 +63,68 @@ class _PricingScreenState extends ConsumerState<PricingScreen> {
     try {
       final r = await dioClient.post(ApiEndpoints.checkout, data: {
         'plan_id': plan['_id'],
-        'origin_url': AppConfig.baseUrl,
       });
-      final checkoutUrl = r.data['url'] as String;
-      final uri = Uri.parse(checkoutUrl);
-
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      } else {
-        if (mounted) showToast(context, 'Could not launch payment URL', isError: true);
-      }
+      final checkout = Map<String, dynamic>.from(r.data as Map);
+      _pendingOrderId = checkout['order_id']?.toString();
+      _razorpay.open({
+        'key': checkout['key_id'],
+        'amount': checkout['amount'],
+        'currency': checkout['currency'],
+        'name': checkout['name'] ?? 'C Maths',
+        'description': checkout['description'],
+        'order_id': checkout['order_id'],
+        'prefill': checkout['prefill'] ?? const {},
+        'theme': {'color': '#2563EB'},
+        'retry': {'enabled': true, 'max_count': 2},
+      });
     } catch (e) {
       if (mounted) showToast(context, formatApiError(e), isError: true);
-    } finally {
       if (mounted) setState(() => _subscribingId = null);
     }
+  }
+
+  Future<void> _handlePaymentSuccess(PaymentSuccessResponse response) async {
+    final orderId = response.orderId ?? _pendingOrderId;
+    if (orderId == null ||
+        response.paymentId == null ||
+        response.signature == null) {
+      _finishWithError('Razorpay returned incomplete payment details.');
+      return;
+    }
+    try {
+      await dioClient.post(ApiEndpoints.paymentVerify, data: {
+        'razorpay_order_id': orderId,
+        'razorpay_payment_id': response.paymentId,
+        'razorpay_signature': response.signature,
+      });
+      await ref.read(authProvider.notifier).refresh();
+      if (!mounted) return;
+      setState(() => _subscribingId = null);
+      context.go(
+          '/payment/success?session_id=${Uri.encodeQueryComponent(orderId)}');
+    } catch (e) {
+      _finishWithError(formatApiError(e));
+    }
+  }
+
+  void _handlePaymentError(PaymentFailureResponse response) {
+    _finishWithError(response.message ?? 'Payment was cancelled or failed.');
+  }
+
+  void _handleExternalWallet(ExternalWalletResponse response) {
+    if (mounted) {
+      showToast(context,
+          'External wallet selected: ${response.walletName ?? 'wallet'}');
+    }
+  }
+
+  void _finishWithError(String message) {
+    if (!mounted) return;
+    setState(() {
+      _subscribingId = null;
+      _pendingOrderId = null;
+    });
+    showToast(context, message, isError: true);
   }
 
   @override
@@ -84,31 +143,42 @@ class _PricingScreenState extends ConsumerState<PricingScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text('MEMBERSHIP',
-                      style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 2, color: AppColors.violet)),
+                      style: GoogleFonts.inter(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 2,
+                          color: AppColors.violet)),
                   const SizedBox(height: 4),
                   Text('Choose your plan',
-                      style: GoogleFonts.fraunces(fontSize: 28, fontWeight: FontWeight.w600, color: AppColors.navy)),
+                      style: GoogleFonts.fraunces(
+                          fontSize: 28,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.navy)),
                   const SizedBox(height: 4),
-                  Text('Your admin sets what\'s free and what\'s premium. Upgrade anytime.',
-                      style: GoogleFonts.inter(fontSize: 13, color: AppColors.slate500)),
+                  Text(
+                      'Your admin sets what\'s free and what\'s premium. Upgrade anytime.',
+                      style: GoogleFonts.inter(
+                          fontSize: 13, color: AppColors.slate500)),
                   const SizedBox(height: 16),
-
                   if (user?.subscriptionActive == true) ...[
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
                         color: AppColors.success.withAlpha(20),
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: AppColors.success.withAlpha(60)),
+                        border:
+                            Border.all(color: AppColors.success.withAlpha(60)),
                       ),
                       child: Text(
                         'You are premium! Expires ${user?.subscriptionExpiresAt?.substring(0, 10) ?? 'soon'}.',
-                        style: GoogleFonts.inter(fontSize: 13, color: AppColors.success, fontWeight: FontWeight.w500),
+                        style: GoogleFonts.inter(
+                            fontSize: 13,
+                            color: AppColors.success,
+                            fontWeight: FontWeight.w500),
                       ),
                     ),
                     const SizedBox(height: 20),
                   ],
-
                   ..._plans.asMap().entries.map((entry) {
                     final i = entry.key;
                     final p = entry.value as Map;
@@ -122,7 +192,8 @@ class _PricingScreenState extends ConsumerState<PricingScreen> {
                         color: AppColors.white,
                         borderRadius: BorderRadius.circular(16),
                         border: Border.all(
-                          color: isPopular ? AppColors.violet : AppColors.slate200,
+                          color:
+                              isPopular ? AppColors.violet : AppColors.slate200,
                           width: isPopular ? 2 : 1,
                         ),
                       ),
@@ -133,56 +204,88 @@ class _PricingScreenState extends ConsumerState<PricingScreen> {
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               Text('${p['duration_days']} DAYS',
-                                  style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1.5, color: AppColors.blue)),
+                                  style: GoogleFonts.inter(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: 1.5,
+                                      color: AppColors.blue)),
                               if (isPopular)
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 4),
                                   decoration: BoxDecoration(
                                     color: AppColors.violet,
                                     borderRadius: BorderRadius.circular(99),
                                   ),
                                   child: Text('POPULAR',
-                                      style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white)),
+                                      style: GoogleFonts.inter(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w700,
+                                          color: Colors.white)),
                                 ),
                             ],
                           ),
                           const SizedBox(height: 8),
                           Text(p['name'] ?? '',
-                              style: GoogleFonts.fraunces(fontSize: 22, fontWeight: FontWeight.w600, color: AppColors.navy)),
+                              style: GoogleFonts.fraunces(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.navy)),
                           const SizedBox(height: 8),
                           Row(
                             crossAxisAlignment: CrossAxisAlignment.baseline,
                             textBaseline: TextBaseline.alphabetic,
                             children: [
                               Text('₹${p['price']}',
-                                  style: GoogleFonts.fraunces(fontSize: 32, fontWeight: FontWeight.w700, color: AppColors.navy)),
-                              Text('/plan', style: GoogleFonts.inter(fontSize: 13, color: AppColors.slate500)),
+                                  style: GoogleFonts.fraunces(
+                                      fontSize: 32,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.navy)),
+                              Text('/plan',
+                                  style: GoogleFonts.inter(
+                                      fontSize: 13, color: AppColors.slate500)),
                             ],
                           ),
-                          if (p['description'] != null && (p['description'] as String).isNotEmpty) ...[
+                          if (p['description'] != null &&
+                              (p['description'] as String).isNotEmpty) ...[
                             const SizedBox(height: 6),
-                            Text(p['description'], style: GoogleFonts.inter(fontSize: 13, color: AppColors.slate500)),
+                            Text(p['description'],
+                                style: GoogleFonts.inter(
+                                    fontSize: 13, color: AppColors.slate500)),
                           ],
                           const SizedBox(height: 16),
                           const Divider(height: 1, color: AppColors.slate200),
                           const SizedBox(height: 12),
-
-                          ...((p['features'] as List?) ?? []).map((f) => Padding(
-                                padding: const EdgeInsets.only(bottom: 6),
-                                child: Row(
-                                  children: [
-                                    const Icon(Icons.check, size: 16, color: AppColors.blue),
-                                    const SizedBox(width: 8),
-                                    Expanded(child: Text(f.toString(), style: GoogleFonts.inter(fontSize: 13, color: AppColors.slate700))),
-                                  ],
-                                ),
-                              )),
-
+                          ...((p['features'] as List?) ?? [])
+                              .map((f) => Padding(
+                                    padding: const EdgeInsets.only(bottom: 6),
+                                    child: Row(
+                                      children: [
+                                        const Icon(Icons.check,
+                                            size: 16, color: AppColors.blue),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                            child: Text(f.toString(),
+                                                style: GoogleFonts.inter(
+                                                    fontSize: 13,
+                                                    color:
+                                                        AppColors.slate700))),
+                                      ],
+                                    ),
+                                  )),
                           const SizedBox(height: 16),
                           PrimaryButton(
-                            text: user?.subscriptionActive == true ? 'Already premium' : isBusy ? 'Redirecting...' : 'Subscribe',
-                            onPressed: (user?.subscriptionActive == true || isBusy) ? null : () => _subscribe(p),
-                            color: isPopular ? AppColors.violet : AppColors.navy,
+                            text: user?.subscriptionActive == true
+                                ? 'Already premium'
+                                : isBusy
+                                    ? 'Opening payment...'
+                                    : 'Subscribe',
+                            onPressed:
+                                (user?.subscriptionActive == true || isBusy)
+                                    ? null
+                                    : () => _subscribe(p),
+                            color:
+                                isPopular ? AppColors.violet : AppColors.navy,
                           ),
                         ],
                       ),

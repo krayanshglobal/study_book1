@@ -388,6 +388,8 @@ async def _startup():
         await db.otp_send_events.create_index([("phone", 1), ("created_at", -1)])
         await db.otp_send_events.create_index("expires_at", expireAfterSeconds=0)
         await db.payment_transactions.create_index("session_id", unique=True)
+        await db.payment_transactions.create_index("order_id", unique=True, sparse=True)
+        await db.payment_transactions.create_index("payment_id", sparse=True)
         logger.info("MongoDB indexes: OK")
 
         # Seed users

@@ -40,7 +40,7 @@ export default function PaymentSuccess() {
         <>
           <Loader2 className="mx-auto animate-spin text-[#2563EB]" size={40} data-testid="payment-loading" />
           <h1 className="mt-6 font-serif text-3xl text-[#0F1B4C]">Confirming payment…</h1>
-          <p className="mt-2 text-[#64748B]">Hold on while we verify with Stripe.</p>
+          <p className="mt-2 text-[#64748B]">Hold on while we verify with Razorpay.</p>
         </>
       )}
       {status === "paid" && (

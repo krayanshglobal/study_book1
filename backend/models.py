@@ -222,7 +222,13 @@ class PlanUpdate(BaseModel):
 # ---------- Payment ----------
 class CheckoutInput(BaseModel):
     plan_id: str
-    origin_url: str
+    origin_url: Optional[str] = None
+
+
+class RazorpayVerifyInput(BaseModel):
+    razorpay_order_id: str = Field(min_length=1, max_length=100)
+    razorpay_payment_id: str = Field(min_length=1, max_length=100)
+    razorpay_signature: str = Field(min_length=1, max_length=256)
 
 
 # ---------- Announcement ----------

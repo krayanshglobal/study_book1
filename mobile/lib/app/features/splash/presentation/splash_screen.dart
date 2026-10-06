@@ -291,7 +291,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
                                   ],
                                 ).createShader(bounds),
                                 child: Text(
-                                  'StudyBook',
+                                  'C Maths',
                                   style: GoogleFonts.fraunces(
                                     fontSize: 40,
                                     fontWeight: FontWeight.w700,

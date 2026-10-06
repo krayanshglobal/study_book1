@@ -78,7 +78,7 @@ class _ManagePromosScreenState extends ConsumerState<ManagePromosScreen> {
                 _tf(_titleCtrl, 'e.g. ₹200 off for New Users'),
                 const SizedBox(height: 12),
                 _label('Subtitle / Description'),
-                _tf(_subtitleCtrl, 'e.g. Join StudyBook Premium today'),
+                _tf(_subtitleCtrl, 'e.g. Join C Maths Premium today'),
                 const SizedBox(height: 12),
                 Row(
                   children: [

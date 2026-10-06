@@ -57,10 +57,14 @@ class ApiEndpoints {
   // Leaderboard & Referrals
   static const String leaderboard = '/api/leaderboard';
   static const String myReferrals = '/api/referrals/me';
-  static const String adminLeaderboardReleaseStatus = '/api/admin/leaderboard/release-status';
-  static const String adminLeaderboardRelease = '/api/admin/leaderboard/release';
-  static String adminTestLeaderboardReleaseStatus(String testId) => '/api/admin/leaderboard/test/$testId/release-status';
-  static String adminTestLeaderboardRelease(String testId) => '/api/admin/leaderboard/test/$testId/release';
+  static const String adminLeaderboardReleaseStatus =
+      '/api/admin/leaderboard/release-status';
+  static const String adminLeaderboardRelease =
+      '/api/admin/leaderboard/release';
+  static String adminTestLeaderboardReleaseStatus(String testId) =>
+      '/api/admin/leaderboard/test/$testId/release-status';
+  static String adminTestLeaderboardRelease(String testId) =>
+      '/api/admin/leaderboard/test/$testId/release';
 
   // Plans
   static const String plans = '/api/plans';
@@ -69,7 +73,9 @@ class ApiEndpoints {
 
   // Payments
   static const String checkout = '/api/payments/checkout';
-  static String paymentStatus(String sessionId) => '/api/payments/status/$sessionId';
+  static const String paymentVerify = '/api/payments/verify';
+  static String paymentStatus(String sessionId) =>
+      '/api/payments/status/$sessionId';
 
   // Admin
   static const String adminStats = '/api/admin/stats';
@@ -78,13 +84,15 @@ class ApiEndpoints {
   static const String adminAnalyticsTopics = '/api/admin/analytics/topics';
   static const String adminAnalyticsTests = '/api/admin/analytics/tests';
   static const String adminPayments = '/api/admin/payments';
-  static const String adminClassChangeRequests = '/api/admin/class-change-requests';
+  static const String adminClassChangeRequests =
+      '/api/admin/class-change-requests';
   static String adminClassChangeRequestAction(String id, String action) =>
       '/api/admin/class-change-requests/$id/$action';
 
   // Super Admin
   static const String superadminAdmins = '/api/superadmin/admins';
-  static String superadminAdminDetail(String id) => '/api/superadmin/admins/$id';
+  static String superadminAdminDetail(String id) =>
+      '/api/superadmin/admins/$id';
 
   // Announcements
   static const String announcements = '/api/announcements';

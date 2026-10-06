@@ -23,7 +23,7 @@
     </queries>
 
     <application
-        android:label="StudyBook"
+        android:label="C Maths"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:enableOnBackInvokedCallback="true"
@@ -49,7 +49,7 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" android:host="studybook.app" />
+                <data android:scheme="https" android:host="student-managment-a4ef3.web.app" />
             </intent-filter>
         </activity>
         <meta-data

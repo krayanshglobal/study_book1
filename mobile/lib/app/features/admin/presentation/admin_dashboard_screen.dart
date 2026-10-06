@@ -204,7 +204,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen>
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              'You control the entire StudyBook experience.',
+                              'You control the entire C Maths experience.',
                               style: GoogleFonts.inter(
                                 fontSize: 13,
                                 color: AppColors.slate500,

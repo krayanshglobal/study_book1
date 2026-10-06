@@ -1,5 +1,5 @@
-name: studybook_mobile
-description: A premium native Flutter Android application for StudyBook student management platform.
+name: cmaths_mobile
+description: A premium native Flutter Android application for the C Maths learning platform.
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -30,6 +30,7 @@ dependencies:
   google_sign_in: ^6.2.1
   firebase_core: ^4.15.0
   firebase_auth: ^6.7.0
+  razorpay_flutter: ^1.4.7
 
 dev_dependencies:
   flutter_test:
@@ -40,4 +41,3 @@ flutter:
   uses-material-design: true
   assets:
     - assets/images/
-    - assets/images/studybook_logo.png

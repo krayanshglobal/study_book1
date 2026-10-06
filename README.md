@@ -13,7 +13,7 @@
   ![React](https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react&logoColor=black)
   ![Tailwind](https://img.shields.io/badge/Tailwind-3.4-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)
   ![Shadcn UI](https://img.shields.io/badge/Shadcn-UI-0F1B4C?style=for-the-badge)
-  ![Stripe](https://img.shields.io/badge/Stripe-Payments-635BFF?style=for-the-badge&logo=stripe&logoColor=white)
+  ![Razorpay](https://img.shields.io/badge/Razorpay-Payments-0C2451?style=for-the-badge&logo=razorpay&logoColor=white)
   ![KaTeX](https://img.shields.io/badge/KaTeX-Math-329F00?style=for-the-badge)
   ![PWA](https://img.shields.io/badge/PWA-Installable-5A0FC8?style=for-the-badge&logo=pwa&logoColor=white)
   ![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)
@@ -71,7 +71,7 @@ It ships with three roles out of the box:
 ### Content & monetisation
 - **Video lessons** — admin adds YouTube URLs, tagged by class/topic, with optional "premium only" flag
 - **Subscription plans in ₹** — admin creates any tier (name, price in INR, duration in days, feature bullets), toggles active/hidden
-- **Stripe Checkout** — one-click payment, webhook + polling status verification, subscription expiry tracking
+- **Razorpay Checkout** — web and native Android checkout, signed callback verification, capture validation, webhook support, and subscription expiry tracking
 - **Free vs paid content** — every test and every video has a `premium_only` switch decided by the admin
 
 ### Community
@@ -134,7 +134,7 @@ It ships with three roles out of the box:
 │                  ├── auth_routes.py     (JWT / bcrypt / reset)       │
 │                  ├── question_routes.py (CRUD + bulk-csv)            │
 │                  ├── test_routes.py     (start / submit / result)    │
-│                  └── misc_routes.py     (videos / plans / stripe …)  │
+│                  └── misc_routes.py     (videos / plans / Razorpay …)│
 │                                                                      │
 │  auth.py    ──►  hash_password · JWT tokens · get_current_user ·     │
 │                  require_role("admin", "superadmin")                 │
@@ -144,8 +144,8 @@ It ships with three roles out of the box:
                     ┌────────┴─────────┐
                     ▼                  ▼
         ┌───────────────────┐  ┌─────────────────────┐
-        │    MongoDB        │  │   Stripe API        │
-        │  (Motor async)    │  │   Checkout sessions │
+        │    MongoDB        │  │  Razorpay API       │
+        │  (Motor async)    │  │   Checkout orders   │
         │                   │  │   + webhook events  │
         │  users            │  └─────────────────────┘
         │  questions        │
@@ -184,7 +184,7 @@ It ships with three roles out of the box:
 | **ASGI server** | **Uvicorn** | Fast, production-ready, first-class FastAPI companion |
 | **Database** | **MongoDB (Motor)** | Flexible schema for evolving question/test shapes; async driver plays well with FastAPI; horizontally scalable |
 | **Auth** | **PyJWT + bcrypt + httpOnly cookies** | Industry standard, secure against XSS (httpOnly), refresh-token rotation, brute-force lockout |
-| **Payments** | **Stripe (via `emergentintegrations`)** | Best-in-class checkout, INR support, webhook-driven subscription activation |
+| **Payments** | **Razorpay** | Native INR checkout, server-created orders, signature verification, and webhook-driven subscription activation |
 | **Frontend framework** | **React 19** | Massive ecosystem, concurrent features, familiar to any web engineer |
 | **Build tool** | **CRA + Craco** | Simple config, path aliases (`@/*`), zero fuss |
 | **Routing** | **React Router 7** | Declarative, code-splitting-ready |
@@ -308,7 +308,9 @@ App is now live at **http://localhost:3000** with the API at **http://localhost:
 | `JWT_SECRET` | 32+ byte secret for signing tokens | *(hex-64 recommended)* |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | Seeded admin credentials | `admin@cmaths.com` / `Admin@CMaths2026` |
 | `SUPERADMIN_EMAIL` / `SUPERADMIN_PASSWORD` | Seeded superadmin credentials | `superadmin@cmaths.com` / `SuperAdmin@CMaths2026` |
-| `STRIPE_API_KEY` | Stripe secret key | `sk_test_...` |
+| `RAZORPAY_KEY_ID` | Razorpay Test/Live key id | `rzp_test_...` |
+| `RAZORPAY_KEY_SECRET` | Razorpay backend-only key secret | *(never expose to clients)* |
+| `RAZORPAY_WEBHOOK_SECRET` | Separate secret configured in the Razorpay webhook | *(random secret)* |
 | `FRONTEND_URL` | Public URL of the frontend | `https://cmaths.example.com` |
 
 **`frontend/.env`**
@@ -396,9 +398,10 @@ All endpoints are prefixed with `/api`. Auth uses **httpOnly cookies**; browser 
 | GET | `/referrals/me` | student | Own code + list of referred users |
 | GET | `/plans` | any | Active plans (students see) |
 | GET / POST / PUT / DELETE | `/admin/plans` `…/{id}` | admin | Plan management |
-| POST | `/payments/checkout` | student | Stripe Checkout session |
-| GET  | `/payments/status/{session_id}` | student | Poll payment status (activates subscription on paid) |
-| POST | `/webhook/stripe` | Stripe signature | Server-to-server payment finalisation |
+| POST | `/payments/checkout` | student | Create a Razorpay order |
+| POST | `/payments/verify` | student | Verify the signed payment and activate the plan |
+| GET  | `/payments/status/{session_id}` | student | Poll verified payment status |
+| POST | `/webhook/razorpay` | Razorpay signature | Server-to-server payment finalisation |
 | POST / DELETE | `/superadmin/admins` `…/{id}` | superadmin | Create / remove admins |
 | GET / POST / DELETE | `/announcements` `…/{id}` | any / admin | Broadcasts |
 | GET | `/admin/users?role=` | admin | User list |
@@ -450,9 +453,9 @@ The app is deploy-ready for any container platform. Two common paths:
 
 Post-deploy checklist:
 - [ ] Set strong `JWT_SECRET`, `ADMIN_PASSWORD`, `SUPERADMIN_PASSWORD`
-- [ ] Set the Stripe **live** key in `STRIPE_API_KEY`
+- [ ] Set Razorpay **live** `RAZORPAY_KEY_ID` and `RAZORPAY_KEY_SECRET`
 - [ ] Point `FRONTEND_URL` to the real public URL
-- [ ] Register the Stripe webhook at `POST {backend}/api/webhook/stripe`
+- [ ] Register the Razorpay webhook at `POST {backend}/api/webhook/razorpay` and set the same `RAZORPAY_WEBHOOK_SECRET`
 - [ ] Enable TLS everywhere (auth cookies require `Secure`)
 
 ---
@@ -463,7 +466,7 @@ Post-deploy checklist:
 - [x] Question bank + CSV bulk upload
 - [x] Scheduled live tests with negative marking and unlockable finals
 - [x] Video lessons (YouTube embed)
-- [x] Stripe subscriptions in INR (admin-set pricing)
+- [x] Razorpay subscriptions in INR (admin-set pricing)
 - [x] Referral codes
 - [x] Announcements
 - [x] LaTeX math rendering
@@ -485,6 +488,6 @@ MIT — do whatever you want, just don't remove the copyright.
 
 Built with focus by the C Maths team.
 
-Made possible by ❤ **FastAPI · MongoDB · React · Tailwind · Shadcn UI · KaTeX · Stripe**
+Made possible by ❤ **FastAPI · MongoDB · React · Flutter · Tailwind · KaTeX · Razorpay**
 
 </div>

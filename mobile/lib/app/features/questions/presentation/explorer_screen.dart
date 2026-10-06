@@ -1840,7 +1840,7 @@ class _PremiumLock extends StatelessWidget {
               style: GoogleFonts.fraunces(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.navy)),
           const SizedBox(height: 8),
           Text(
-            'This content is exclusively available for premium members. Upgrade to StudyBook Premium to access it.',
+            'This content is exclusively available for premium members. Upgrade to C Maths Premium to access it.',
             textAlign: TextAlign.center,
             style: GoogleFonts.inter(fontSize: 13, color: AppColors.slate500),
           ),

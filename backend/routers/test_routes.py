@@ -29,18 +29,68 @@ def _safe_oid(val: str, field: str = "ID") -> ObjectId:
 
 def _parse_scheduled(test: dict) -> tuple:
     """Return (start_dt, end_dt) timezone-aware IST datetimes for a test."""
-    date_str = test["scheduled_date"]
+    date_str = test.get("start_date") or test.get("scheduled_date")
     start_dt = datetime.fromisoformat(f"{date_str}T{test.get('start_time', '20:00')}:00+05:30")
-    end_dt = datetime.fromisoformat(f"{date_str}T{test.get('end_time', '21:00')}:00+05:30")
-    if end_dt <= start_dt:
-        end_dt = end_dt + timedelta(days=1)
+    if test.get("test_type", "mock") == "mock":
+        if test.get("end_date"):
+            end_dt = datetime.fromisoformat(f"{test['end_date']}T23:59:59+05:30")
+        else:
+            end_dt = datetime.max.replace(tzinfo=timezone.utc)
+    else:
+        end_date = test.get("end_date") or date_str
+        end_time = test.get("end_time") or "21:00"
+        end_dt = datetime.fromisoformat(f"{end_date}T{end_time}:00+05:30")
     return start_dt, end_dt
+
+
+def _normalise_and_validate_schedule(doc: dict, *, allow_past: bool = False) -> dict:
+    start_date = doc.get("start_date") or doc.get("scheduled_date")
+    if not start_date:
+        raise HTTPException(status_code=422, detail="Start date is required")
+    doc["start_date"] = start_date
+    doc["scheduled_date"] = start_date  # legacy compatibility
+    if int(doc.get("duration_minutes") or 0) <= 0:
+        raise HTTPException(status_code=422, detail="Duration must be greater than zero")
+    try:
+        start_dt = datetime.fromisoformat(
+            f"{start_date}T{doc.get('start_time') or '20:00'}:00+05:30"
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Invalid start date or time") from exc
+    if not allow_past and start_dt < datetime.now(timezone.utc):
+        raise HTTPException(status_code=422, detail="Start date and time cannot be in the past")
+
+    if doc.get("test_type", "mock") == "mock":
+        doc["end_time"] = None
+        if doc.get("end_date"):
+            try:
+                end_day = datetime.fromisoformat(f"{doc['end_date']}T23:59:59+05:30")
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail="Invalid end date") from exc
+            if end_day < start_dt:
+                raise HTTPException(status_code=422, detail="End date cannot precede start date")
+    else:
+        doc["end_date"] = doc.get("end_date") or start_date
+        if not doc.get("end_time"):
+            raise HTTPException(status_code=422, detail="End time is required for final tests")
+        try:
+            end_dt = datetime.fromisoformat(
+                f"{doc['end_date']}T{doc['end_time']}:00+05:30"
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="Invalid end date or time") from exc
+        if end_dt <= start_dt:
+            raise HTTPException(status_code=422, detail="End date and time must be after start date and time")
+    return doc
 
 
 @router.get("")
 async def list_tests(
     class_level: Optional[str] = None,
     test_type: Optional[str] = None,
+    premium: Optional[str] = None,
+    start_from: Optional[str] = None,
+    start_to: Optional[str] = None,
     limit: int = Query(50, le=200),
     skip: int = Query(0, ge=0),
     user=Depends(get_current_user),
@@ -56,6 +106,16 @@ async def list_tests(
             q["class_level"] = class_level
     if test_type and test_type in ("mock", "final"):
         q["test_type"] = test_type
+    if premium == "premium":
+        q["premium_only"] = True
+    elif premium == "free":
+        q["premium_only"] = {"$ne": True}
+    if start_from or start_to:
+        q["start_date"] = {}
+        if start_from:
+            q["start_date"]["$gte"] = start_from
+        if start_to:
+            q["start_date"]["$lte"] = start_to
 
     cursor = db.tests.find(q).sort("scheduled_date", -1).skip(skip).limit(limit)
     items = [_ser(t) async for t in cursor]
@@ -127,6 +187,10 @@ async def get_test(tid: str, user=Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="Not found")
     if user["role"] == "student" and not t.get("is_published"):
         raise HTTPException(status_code=404, detail="Not found")
+    if user["role"] == "student" and t.get("class_level") != user.get("class_level"):
+        raise HTTPException(status_code=403, detail="Access denied to this test's class level")
+    if user["role"] == "student" and t.get("premium_only") and not user.get("subscription_active"):
+        raise HTTPException(status_code=402, detail="Premium subscription required")
     return _ser(t)
 
 
@@ -140,6 +204,8 @@ async def start_test(tid: str, user=Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="Test not found")
     if not t.get("is_published"):
         raise HTTPException(status_code=403, detail="Test not published")
+    if user["role"] == "student" and t.get("class_level") != user.get("class_level"):
+        raise HTTPException(status_code=403, detail="Access denied to this test's class level")
 
     # Premium + lock checks
     if t.get("premium_only") and not user.get("subscription_active"):
@@ -207,6 +273,10 @@ async def submit_test(tid: str, body: SubmitTestInput, user=Depends(get_current_
     t = await db.tests.find_one({"_id": oid})
     if not t:
         raise HTTPException(status_code=404, detail="Test not found")
+    if user["role"] == "student" and t.get("class_level") != user.get("class_level"):
+        raise HTTPException(status_code=403, detail="Access denied to this test's class level")
+    if user["role"] == "student" and t.get("premium_only") and not user.get("subscription_active"):
+        raise HTTPException(status_code=402, detail="Premium subscription required")
     attempt = await db.test_attempts.find_one({"user_id": user["_id"], "test_id": tid})
     if not attempt:
         raise HTTPException(status_code=404, detail="Attempt not found. Start the test first.")
@@ -304,6 +374,10 @@ async def my_result(tid: str, user=Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="No result found")
     oid = _safe_oid(tid, "test ID")
     t = await db.tests.find_one({"_id": oid})
+    if t and user["role"] == "student" and t.get("class_level") != user.get("class_level"):
+        raise HTTPException(status_code=403, detail="Access denied to this test's class level")
+    if t and user["role"] == "student" and t.get("premium_only") and not user.get("subscription_active"):
+        raise HTTPException(status_code=402, detail="Premium subscription required")
     qids = [ObjectId(q) for q in t.get("question_ids", [])] if t else []
     questions = []
     async for q in db.questions.find({"_id": {"$in": qids}}):
@@ -318,19 +392,24 @@ async def my_result(tid: str, user=Depends(get_current_user)):
 @router.post("")
 async def create_test(body: TestCreate, admin=Depends(require_role("admin", "superadmin"))):
     from server import db
-    doc = body.model_dump()
+    doc = _normalise_and_validate_schedule(body.model_dump())
+    raw_question_ids = doc.get("question_ids") or []
+    q_oids = [ObjectId(qid) for qid in raw_question_ids if ObjectId.is_valid(qid)]
+    if len(q_oids) != len(set(raw_question_ids)):
+        raise HTTPException(status_code=422, detail="One or more question IDs are invalid or duplicated")
+    if q_oids and await db.questions.count_documents({"_id": {"$in": q_oids}, "class_level": doc["class_level"]}) != len(q_oids):
+        raise HTTPException(status_code=422, detail="Selected questions must exist and belong to the test class")
     doc["created_by"] = admin["_id"]
     doc["created_at"] = now_iso()
     result = await db.tests.insert_one(doc)
     doc["_id"] = str(result.inserted_id)
 
-    # Auto-publish questions included in this test
+    # Questions used by a test remain backed by their master and return to the bank.
     if doc.get("question_ids"):
-        q_oids = [ObjectId(qid) for qid in doc["question_ids"] if ObjectId.is_valid(qid)]
         if q_oids:
             await db.questions.update_many(
                 {"_id": {"$in": q_oids}},
-                {"$set": {"is_published": True, "published_at": now_iso()}}
+                {"$set": {"category": "question_bank", "is_published": True, "published_at": now_iso()}, "$unset": {"daily_expires_at": ""}}
             )
     return doc
 
@@ -339,11 +418,28 @@ async def create_test(body: TestCreate, admin=Depends(require_role("admin", "sup
 async def update_test(tid: str, body: TestUpdate, admin=Depends(require_role("admin", "superadmin"))):
     from server import db
     oid = _safe_oid(tid, "test ID")
+    existing = await db.tests.find_one({"_id": oid})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Test not found")
     upd = {k: v for k, v in body.model_dump().items() if v is not None}
+    if "question_ids" in upd:
+        raw_question_ids = upd["question_ids"] or []
+        q_oids = [ObjectId(qid) for qid in raw_question_ids if ObjectId.is_valid(qid)]
+        if len(q_oids) != len(set(raw_question_ids)):
+            raise HTTPException(status_code=422, detail="One or more question IDs are invalid or duplicated")
+        target_class = upd.get("class_level") or existing.get("class_level")
+        if q_oids and await db.questions.count_documents({"_id": {"$in": q_oids}, "class_level": target_class}) != len(q_oids):
+            raise HTTPException(status_code=422, detail="Selected questions must exist and belong to the test class")
+    merged = {**existing, **upd}
+    merged = _normalise_and_validate_schedule(merged, allow_past=True)
+    schedule_fields = {k: merged.get(k) for k in (
+        "scheduled_date", "start_date", "start_time", "end_date", "end_time",
+        "duration_minutes", "test_type"
+    )}
+    upd.update(schedule_fields)
+    upd["updated_at"] = now_iso()
     await db.tests.update_one({"_id": oid}, {"$set": upd})
     t = await db.tests.find_one({"_id": oid})
-    if not t:
-        raise HTTPException(status_code=404, detail="Test not found")
 
     # Auto-publish questions included in updated test
     if t.get("question_ids"):
@@ -351,7 +447,7 @@ async def update_test(tid: str, body: TestUpdate, admin=Depends(require_role("ad
         if q_oids:
             await db.questions.update_many(
                 {"_id": {"$in": q_oids}},
-                {"$set": {"is_published": True, "published_at": now_iso()}}
+                {"$set": {"category": "question_bank", "is_published": True, "published_at": now_iso()}, "$unset": {"daily_expires_at": ""}}
             )
     return _ser(t)
 
@@ -379,6 +475,7 @@ async def test_leaderboard(tid: str, _=Depends(get_current_user)):
         except Exception:
             pass
         out.append({
+            "attempt_id": str(a["_id"]),
             "rank": rank,
             "user_id": a["user_id"],
             "name": u["name"] if u else "Student",

@@ -28,6 +28,7 @@ const emptyQ = {
   is_published: true,
   publish_date: "",
   category: "question_bank",
+  premium_only: false,
 };
 
 export default function ManageQuestions() {
@@ -35,7 +36,8 @@ export default function ManageQuestions() {
 
   // Published & Draft questions list
   const [items, setItems] = useState([]);
-  const [filter, setFilter] = useState({ class_level: adminClass, topic: "", status: "all", difficulty: "all" });
+  const [filter, setFilter] = useState({ class_level: adminClass, topic: "", status: "all", difficulty: "all", premium: "all", created_from: "", created_to: "", published_from: "", published_to: "" });
+  const [selected, setSelected] = useState([]);
 
   // Batch staging — questions ready to publish
   const [batch, setBatch] = useState([]);
@@ -51,10 +53,16 @@ export default function ManageQuestions() {
     const params = { limit: 200 };
     if (filter.class_level !== "all") params.class_level = filter.class_level;
     if (filter.topic) params.topic = filter.topic;
-    if (filter.status && filter.status !== "all") params.category = filter.status;
+    if (filter.status && filter.status !== "all") {
+      if (filter.status === "published") params.status = "published";
+      else params.category = filter.status;
+    }
     if (filter.difficulty && filter.difficulty !== "all") params.difficulty = filter.difficulty;
+    if (filter.premium && filter.premium !== "all") params.premium = filter.premium;
+    for (const key of ["created_from", "created_to", "published_from", "published_to"]) if (filter[key]) params[key] = filter[key];
     const r = await api.get("/api/questions", { params });
     setItems(r.data.items || []);
+    setSelected((current) => current.filter((id) => (r.data.items || []).some((q) => q._id === id)));
   };
 
   const handleDifficultyChange = (level) => {
@@ -113,7 +121,7 @@ export default function ManageQuestions() {
     try {
       let count = 0;
       for (const q of toSave) {
-        const payload = { ...q, is_published: false };
+      const payload = { ...q, is_published: false, category: "draft" };
         delete payload._batchId;
         if (payload.q_type === "typed") payload.options = null;
         await api.post("/api/questions", payload);
@@ -144,7 +152,7 @@ export default function ManageQuestions() {
     try {
       let count = 0;
       for (const q of toPublish) {
-        const payload = { ...q, is_published: true };
+      const payload = { ...q, is_published: true, category: q.category === "daily_24h" ? "daily_24h" : "question_bank" };
         delete payload._batchId;
         if (payload.q_type === "typed") payload.options = null;
         await api.post("/api/questions", payload);
@@ -183,6 +191,25 @@ export default function ManageQuestions() {
     if (!window.confirm("Delete this question?")) return;
     await api.delete(`/api/questions/${id}`);
     toast.success("Deleted"); load();
+  };
+
+  const copyToDraft = async (id) => {
+    try {
+      await api.post(`/api/questions/${id}/copy-draft`);
+      toast.success("Editable draft copy created; the published question is unchanged");
+      load();
+    } catch (err) { toast.error(formatApiError(err)); }
+  };
+
+  const runBulkAction = async (action) => {
+    if (!selected.length) { toast.error("Select at least one question"); return; }
+    if (action === "delete" && !window.confirm(`Permanently delete ${selected.length} selected question(s)?`)) return;
+    try {
+      const r = await api.post("/api/questions/bulk-action", { question_ids: selected, action });
+      toast.success(`${r.data.changed ?? selected.length} question(s) updated`);
+      setSelected([]);
+      await load();
+    } catch (err) { toast.error(formatApiError(err)); }
   };
 
   const CSV_TEMPLATE = `subject,class_level,topic,question_text,q_type,option_a,option_b,option_c,option_d,correct_index,correct_answer_text,explanation,positive_marks,negative_marks,difficulty,image_url
@@ -330,6 +357,11 @@ maths,10,Quadratic,"Discriminant of $ax^2+bx+c$?",typed,,,,,,b^2-4ac,"D = b^2 - 
           />
         </div>
       </div>
+
+      <label className="flex items-center gap-2 p-3 rounded-xl border border-amber-200 bg-amber-50/50 cursor-pointer">
+        <input type="checkbox" checked={!!form.premium_only} onChange={(e) => setF("premium_only", e.target.checked)} className="w-4 h-4 accent-amber-600" />
+        <span className="text-xs font-semibold text-[#0F1B4C]">Premium question</span>
+      </label>
 
       <div><Label>Image URL (optional)</Label><Input value={form.image_url} onChange={(e) => setF("image_url", e.target.value)} placeholder="https://…" /></div>
     </div>
@@ -518,6 +550,7 @@ maths,10,Quadratic,"Discriminant of $ax^2+bx+c$?",typed,,,,,,b^2-4ac,"D = b^2 - 
             <SelectItem value="question_bank">📚 Question Bank Only</SelectItem>
             <SelectItem value="daily_24h">⚡ Daily 24h Questions Only</SelectItem>
             <SelectItem value="draft">🟡 Drafts Only</SelectItem>
+            <SelectItem value="published">Published Only</SelectItem>
           </SelectContent>
         </Select>
 
@@ -531,8 +564,28 @@ maths,10,Quadratic,"Discriminant of $ax^2+bx+c$?",typed,,,,,,b^2-4ac,"D = b^2 - 
           </SelectContent>
         </Select>
 
+        <Select value={filter.premium || "all"} onValueChange={(v) => setFilter({ ...filter, premium: v })}>
+          <SelectTrigger className="w-40 rounded-full bg-white"><SelectValue /></SelectTrigger>
+          <SelectContent><SelectItem value="all">All access</SelectItem><SelectItem value="free">Free</SelectItem><SelectItem value="premium">Premium</SelectItem></SelectContent>
+        </Select>
         <Input placeholder="Filter by topic…" className="w-56 rounded-full" value={filter.topic} onChange={(e) => setFilter({ ...filter, topic: e.target.value })} />
+        <Input type="date" title="Created from" className="w-40 rounded-full" value={filter.created_from} onChange={(e) => setFilter({ ...filter, created_from: e.target.value })} />
+        <Input type="date" title="Created to" className="w-40 rounded-full" value={filter.created_to} onChange={(e) => setFilter({ ...filter, created_to: e.target.value })} />
+        <Input type="date" title="Published from" className="w-40 rounded-full" value={filter.published_from} onChange={(e) => setFilter({ ...filter, published_from: e.target.value })} />
+        <Input type="date" title="Published to" className="w-40 rounded-full" value={filter.published_to} onChange={(e) => setFilter({ ...filter, published_to: e.target.value })} />
         <div className="text-sm text-[#64748B] ml-auto self-center font-medium">{items.length} total questions</div>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
+        <Button size="sm" variant="outline" onClick={() => setSelected(items.map((q) => q._id))}>Select All</Button>
+        <Button size="sm" variant="ghost" onClick={() => setSelected([])}>Clear Selection</Button>
+        <span className="text-xs font-semibold text-[#64748B] mr-2">{selected.length} selected</span>
+        <Button size="sm" variant="outline" onClick={() => runBulkAction("move_question_bank")}>Move to Question Bank</Button>
+        <Button size="sm" variant="outline" onClick={() => runBulkAction("move_draft")}>Move to Draft</Button>
+        <Button size="sm" variant="outline" onClick={() => runBulkAction("publish_daily")}>Publish Daily 24h</Button>
+        <Button size="sm" variant="outline" onClick={() => runBulkAction("mark_free")}>Mark Free</Button>
+        <Button size="sm" variant="outline" onClick={() => runBulkAction("mark_premium")}>Mark Premium</Button>
+        <Button size="sm" variant="destructive" onClick={() => runBulkAction("delete")}>Delete Selected</Button>
       </div>
 
       {/* Questions list */}
@@ -541,12 +594,15 @@ maths,10,Quadratic,"Discriminant of $ax^2+bx+c$?",typed,,,,,,b^2-4ac,"D = b^2 - 
           const cat = q.category || (q.is_published === false ? "draft" : "question_bank");
           return (
             <Card key={q._id} className="rounded-2xl border-slate-200 p-5 flex items-start justify-between gap-4" data-testid={`admin-q-row-${q._id}`}>
+              <input type="checkbox" className="mt-1 w-4 h-4 accent-[#7C3AED]" checked={selected.includes(q._id)} onChange={(e) => setSelected((s) => e.target.checked ? [...s, q._id] : s.filter((id) => id !== q._id))} />
               <div className="flex-1">
                 <div className="flex items-center gap-2 text-xs text-[#64748B] flex-wrap">
                   <span className="uppercase tracking-widest text-[#7C3AED] font-semibold">{q.topic || "No topic"}</span>
                   <span>· Class {q.class_level}</span>
                   <span>· {q.q_type?.toUpperCase()}</span>
                   <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${q.difficulty === "easy" ? "bg-green-100 text-green-700" : q.difficulty === "hard" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"}`}>{q.difficulty}</span>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase text-white ${q.premium_only ? "bg-amber-500" : "bg-emerald-600"}`}>{q.premium_only ? "Premium" : "Free"}</span>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${q.is_published === false ? "bg-slate-100 text-slate-700" : "bg-green-100 text-green-700"}`}>{q.is_published === false ? "Draft" : "Published"}</span>
 
                   {/* Destination Badge */}
                   {cat === "daily_24h" ? (
@@ -599,6 +655,9 @@ maths,10,Quadratic,"Discriminant of $ax^2+bx+c$?",typed,,,,,,b^2-4ac,"D = b^2 - 
                   >
                     Save Draft
                   </Button>
+                )}
+                {q.is_published !== false && (
+                  <Button variant="outline" size="sm" onClick={() => copyToDraft(q._id)} className="rounded-full text-xs h-8 px-3">Copy to Draft</Button>
                 )}
                 <Button variant="ghost" size="icon" onClick={() => openEditPublished(q)} data-testid={`q-edit-${q._id}`}><Pencil size={16} /></Button>
                 <Button variant="ghost" size="icon" onClick={() => del(q._id)} data-testid={`q-del-${q._id}`}><Trash2 size={16} className="text-red-500" /></Button>

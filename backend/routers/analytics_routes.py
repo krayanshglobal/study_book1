@@ -218,6 +218,9 @@ async def daily_practice(user=Depends(get_current_user)):
     """
     from server import db
     import random, hashlib
+    from question_lifecycle import expire_daily_questions
+
+    await expire_daily_questions(db)
 
     class_level = user.get("class_level")
     if not class_level:

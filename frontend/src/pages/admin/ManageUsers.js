@@ -22,6 +22,8 @@ export default function ManageUsers() {
   const [page, setPage] = useState(0);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
+  const [subscriptionFilter, setSubscriptionFilter] = useState("all");
+  const [selectedUsers, setSelectedUsers] = useState([]);
 
   // Edit dialog
   const [editOpen, setEditOpen] = useState(false);
@@ -44,19 +46,21 @@ export default function ManageUsers() {
         skip: page * PAGE_SIZE,
       };
       if (activeClass !== "all") params.class_level = activeClass;
+      if (subscriptionFilter !== "all") params.subscription = subscriptionFilter;
       const r = await api.get("/api/admin/users", { params });
       setItems(r.data.items || []);
+      setSelectedUsers((current) => current.filter((id) => (r.data.items || []).some((item) => item._id === id)));
       setTotal(r.data.total || 0);
     } catch (err) {
       toast.error(formatApiError(err));
     } finally {
       setLoading(false);
     }
-  }, [activeClass, search, page]);
+  }, [activeClass, search, page, subscriptionFilter]);
 
   useEffect(() => {
     setPage(0);
-  }, [search, activeClass]);
+  }, [search, activeClass, subscriptionFilter]);
 
   useEffect(() => {
     load();
@@ -134,6 +138,16 @@ export default function ManageUsers() {
   };
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
+
+  const bulkSubscription = async (premiumOnly) => {
+    if (!selectedUsers.length) return toast.error("Select at least one student");
+    try {
+      await api.post("/api/admin/users/bulk-subscription", { user_ids: selectedUsers, premium_only: premiumOnly, duration_days: 30 });
+      toast.success(`Selected students moved to ${premiumOnly ? "Premium (30 days)" : "Free"}`);
+      setSelectedUsers([]);
+      load();
+    } catch (err) { toast.error(formatApiError(err)); }
+  };
 
   return (
     <div className="max-w-6xl mx-auto px-6 sm:px-10 py-10">
@@ -214,6 +228,14 @@ export default function ManageUsers() {
                 <SelectItem value="10">Class 10</SelectItem>
               </SelectContent>
             </Select>
+            <Select value={subscriptionFilter} onValueChange={setSubscriptionFilter}>
+              <SelectTrigger className="w-40 rounded-full text-xs bg-white"><SelectValue /></SelectTrigger>
+              <SelectContent><SelectItem value="all">All plans</SelectItem><SelectItem value="free">Free</SelectItem><SelectItem value="premium">Premium</SelectItem></SelectContent>
+            </Select>
+            <Button size="sm" variant="outline" onClick={() => setSelectedUsers(items.filter((u) => u.role === "student").map((u) => u._id))}>Select All</Button>
+            <Button size="sm" variant="ghost" onClick={() => setSelectedUsers([])}>Clear</Button>
+            <Button size="sm" variant="outline" disabled={!selectedUsers.length} onClick={() => bulkSubscription(false)}>Mark Free</Button>
+            <Button size="sm" variant="outline" disabled={!selectedUsers.length} onClick={() => bulkSubscription(true)}>Premium 30d</Button>
             <div className="ml-auto text-xs text-[#64748B]">
               {total} total · page {page + 1} of {Math.max(totalPages, 1)}
             </div>
@@ -241,6 +263,7 @@ export default function ManageUsers() {
                 data-testid={`user-row-${u._id}`}
               >
                 <div className="flex items-center gap-2.5 min-w-0">
+                  {u.role === "student" && <input type="checkbox" aria-label={`Select ${u.name}`} className="h-4 w-4" checked={selectedUsers.includes(u._id)} onChange={(e) => setSelectedUsers((ids) => e.target.checked ? [...ids, u._id] : ids.filter((id) => id !== u._id))} />}
                   <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 border border-slate-200 grid place-items-center bg-slate-100">
                     {u.avatar_url ? (
                       <img src={u.avatar_url} alt={u.name} className="w-full h-full object-cover" />

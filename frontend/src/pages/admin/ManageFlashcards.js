@@ -24,7 +24,8 @@ export default function ManageFlashcards() {
   const [form, setForm] = useState({ ...empty, class_level: activeClass });
   const [editing, setEditing] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [filter, setFilter] = useState({ class_level: activeClass, topic: "" });
+  const [filter, setFilter] = useState({ class_level: activeClass, topic: "", premium: "all" });
+  const [selected, setSelected] = useState([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -33,9 +34,11 @@ export default function ManageFlashcards() {
         params: {
           class_level: filter.class_level !== "all" ? filter.class_level : undefined,
           topic: filter.topic || undefined,
+          premium: filter.premium !== "all" ? filter.premium : undefined,
         },
       });
       setItems(r.data.items || []);
+      setSelected((current) => current.filter((id) => (r.data.items || []).some((item) => item._id === id)));
     } catch (err) {
       toast.error(formatApiError(err));
     } finally {
@@ -96,6 +99,16 @@ export default function ManageFlashcards() {
     } catch (err) {
       toast.error(formatApiError(err));
     }
+  };
+
+  const bulkPremium = async (premiumOnly) => {
+    if (!selected.length) return toast.error("Select at least one flashcard");
+    try {
+      await api.post("/api/admin/content/bulk-premium", { content_type: "flashcards", ids: selected, premium_only: premiumOnly });
+      toast.success(`Selected flashcards marked ${premiumOnly ? "Premium" : "Free"}`);
+      setSelected([]);
+      load();
+    } catch (err) { toast.error(formatApiError(err)); }
   };
 
   const classesList = [
@@ -245,6 +258,12 @@ export default function ManageFlashcards() {
           value={filter.topic}
           onChange={(e) => setFilter((f) => ({ ...f, topic: e.target.value }))}
         />
+        <Select value={filter.premium} onValueChange={(v) => setFilter((f) => ({ ...f, premium: v }))}>
+          <SelectTrigger className="w-40 rounded-full"><SelectValue /></SelectTrigger>
+          <SelectContent><SelectItem value="all">All access</SelectItem><SelectItem value="free">Free</SelectItem><SelectItem value="premium">Premium</SelectItem></SelectContent>
+        </Select>
+        <Button variant="outline" size="sm" disabled={!selected.length} onClick={() => bulkPremium(false)}>Mark Free</Button>
+        <Button variant="outline" size="sm" disabled={!selected.length} onClick={() => bulkPremium(true)}>Mark Premium</Button>
         <div className="text-sm text-[#64748B] self-center ml-auto">{items.length} cards</div>
       </div>
 
@@ -259,14 +278,13 @@ export default function ManageFlashcards() {
         <div className="mt-6 grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {items.map((fc) => (
             <Card key={fc._id} className="rounded-2xl border-slate-200 p-5">
+              <input type="checkbox" aria-label={`Select ${fc.front}`} className="mb-3 h-4 w-4" checked={selected.includes(fc._id)} onChange={(e) => setSelected((ids) => e.target.checked ? [...ids, fc._id] : ids.filter((id) => id !== fc._id))} />
               <div className="flex items-start justify-between gap-2">
                 <div>
                   <div className="text-xs text-[#7C3AED] uppercase tracking-widest font-semibold truncate">
                     {fc.topic || "General"} · Class {fc.class_level}
                   </div>
-                  {fc.premium_only && (
-                    <Badge className="bg-amber-500 text-white text-[10px] mt-1">PREMIUM</Badge>
-                  )}
+                  <Badge className={`${fc.premium_only ? "bg-amber-500" : "bg-emerald-600"} text-white text-[10px] mt-1`}>{fc.premium_only ? "PREMIUM" : "FREE"}</Badge>
                 </div>
                 <div className="flex gap-1 shrink-0">
                   <Button variant="ghost" size="icon" onClick={() => openEdit(fc)}>

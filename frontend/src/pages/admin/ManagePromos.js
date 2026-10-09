@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import api, { formatApiError } from "@/lib/api";
 import BackButton from "@/components/BackButton";
 import { Button } from "@/components/ui/button";
@@ -12,13 +12,15 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Plus, Trash2, Calendar, Tag, Link as LinkIcon, Image as ImageIcon } from "lucide-react";
 
-const empty = { title: "", subtitle: "", code: "", link_url: "", image_url: "", countdown_hours: 24, is_active: true, class_level: "all" };
+const empty = { title: "", subtitle: "", code: "", link_url: "", image_url: "", countdown_hours: 24, is_active: true, class_level: "all", premium_only: false };
 
 export default function ManagePromos() {
   const [items, setItems] = useState([]);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(empty);
   const [uploading, setUploading] = useState(false);
+  const [premiumFilter, setPremiumFilter] = useState("all");
+  const [selected, setSelected] = useState([]);
   const fileInputRef = React.useRef(null);
 
   const handleFileUpload = async (e) => {
@@ -39,18 +41,19 @@ export default function ManagePromos() {
     }
   };
 
-  const load = async () => {
+  const load = useCallback(async () => {
     try {
-      const r = await api.get("/api/promos");
+      const r = await api.get("/api/promos", { params: { premium: premiumFilter !== "all" ? premiumFilter : undefined } });
       setItems(r.data.items || []);
+      setSelected((current) => current.filter((id) => (r.data.items || []).some((item) => item._id === id)));
     } catch (err) {
       toast.error("Failed to load promo banners.");
     }
-  };
+  }, [premiumFilter]);
 
   useEffect(() => {
     load();
-  }, []);
+  }, [load]);
 
   const save = async () => {
     if (!form.title.trim() || !form.subtitle.trim()) {
@@ -77,6 +80,16 @@ export default function ManagePromos() {
     } catch (err) {
       toast.error(formatApiError(err));
     }
+  };
+
+  const bulkPremium = async (premiumOnly) => {
+    if (!selected.length) return toast.error("Select at least one offer");
+    try {
+      await api.post("/api/admin/content/bulk-premium", { content_type: "promos", ids: selected, premium_only: premiumOnly });
+      toast.success(`Selected offers marked ${premiumOnly ? "Premium" : "Free"}`);
+      setSelected([]);
+      load();
+    } catch (err) { toast.error(formatApiError(err)); }
   };
 
   return (
@@ -207,6 +220,10 @@ export default function ManagePromos() {
                 />
                 <Label htmlFor="pia">Activate Banner Immediately</Label>
               </div>
+              <div className="flex items-center gap-2">
+                <Switch checked={form.premium_only} onCheckedChange={(v) => setForm({ ...form, premium_only: v })} id="promo-premium" />
+                <Label htmlFor="promo-premium">Premium users only</Label>
+              </div>
               <div className="flex justify-end gap-2 pt-2">
                 <Button variant="outline" className="rounded-full" onClick={() => setOpen(false)}>Cancel</Button>
                 <Button onClick={save} className="rounded-full bg-[#0F1B4C] hover:bg-[#2563EB]">Publish Banner</Button>
@@ -216,15 +233,23 @@ export default function ManagePromos() {
         </Dialog>
       </div>
 
-      <div className="mt-8 grid md:grid-cols-2 gap-6">
+      <div className="mt-6 flex flex-wrap items-center gap-2">
+        <Select value={premiumFilter} onValueChange={setPremiumFilter}><SelectTrigger className="w-40 rounded-full"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All access</SelectItem><SelectItem value="free">Free</SelectItem><SelectItem value="premium">Premium</SelectItem></SelectContent></Select>
+        <Button variant="outline" size="sm" disabled={!selected.length} onClick={() => bulkPremium(false)}>Mark Free</Button>
+        <Button variant="outline" size="sm" disabled={!selected.length} onClick={() => bulkPremium(true)}>Mark Premium</Button>
+        <span className="text-xs text-slate-500">{selected.length} selected</span>
+      </div>
+      <div className="mt-4 grid md:grid-cols-2 gap-6">
         {items.map((promo) => (
           <Card key={promo._id} className="p-6 rounded-3xl border-slate-200 bg-slate-50 relative overflow-hidden flex flex-col justify-between">
+            <input type="checkbox" aria-label={`Select ${promo.title}`} className="mb-3 h-4 w-4" checked={selected.includes(promo._id)} onChange={(e) => setSelected((ids) => e.target.checked ? [...ids, promo._id] : ids.filter((id) => id !== promo._id))} />
             <div>
               <div className="flex items-center justify-between border-b border-slate-200 pb-3 mb-4 gap-2 flex-wrap">
                 <div className="flex items-center gap-2">
                   <Badge className="bg-purple-600 text-white text-[10px]">
                     {promo.class_level === "all" || !promo.class_level ? "ALL CLASSES" : `CLASS ${promo.class_level}`}
                   </Badge>
+                  <Badge className={`${promo.premium_only ? "bg-amber-500" : "bg-emerald-600"} text-white text-[10px]`}>{promo.premium_only ? "PREMIUM" : "FREE"}</Badge>
                   {promo.code ? (
                     <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#7C3AED] bg-violet-50 px-2.5 py-1 rounded-full">
                       <Tag size={12} /> Code: {promo.code}

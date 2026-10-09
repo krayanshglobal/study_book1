@@ -17,7 +17,7 @@ import RichEditor from "@/components/RichEditor";
 
 const empty = {
   title: "", description: "", test_type: "mock", class_level: "10", subject: "maths",
-  scheduled_date: "", start_time: "20:00", end_time: "21:00", duration_minutes: 60,
+  scheduled_date: "", start_date: "", start_time: "20:00", end_date: "", end_time: "21:00", duration_minutes: 60,
   negative_marking: true, question_ids: [], is_published: false,
   unlock_score_required: null, prerequisite_test_id: null, premium_only: false,
 };
@@ -38,6 +38,8 @@ const emptyQ = {
 export default function ManageTests() {
   const [activeClass, setActiveClass] = useState(localStorage.getItem("admin_class_level") || "8");
   const [tests, setTests] = useState([]);
+  const [premiumFilter, setPremiumFilter] = useState("all");
+  const [selectedTests, setSelectedTests] = useState([]);
   const [step, setStep] = useState(1);
 
   const handleSelectClass = (cls) => {
@@ -45,6 +47,7 @@ export default function ManageTests() {
     setStep(2);
   };
   const [questions, setQuestions] = useState([]);
+  const [questionFilters, setQuestionFilters] = useState({ difficulty: "all", topic: "all", category: "all", premium: "all", createdDate: "", publishedDate: "" });
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ ...empty, class_level: activeClass });
   const [editing, setEditing] = useState(null);
@@ -59,11 +62,16 @@ export default function ManageTests() {
   const [attemptsTest, setAttemptsTest] = useState(null);
   const [attempts, setAttempts] = useState([]);
   const [attemptsLoading, setAttemptsLoading] = useState(false);
+  const [editingAttempt, setEditingAttempt] = useState(null);
+  const [attemptEdit, setAttemptEdit] = useState({ score: 0, total_marks: 0, percent: 0, submitted: true });
 
   const [testLbStatus, setTestLbStatus] = useState({});
 
   const load = useCallback(async () => {
-    const t = await api.get("/api/tests", { params: { class_level: activeClass } });
+    const params = {};
+    if (activeClass !== "all") params.class_level = activeClass;
+    if (premiumFilter !== "all") params.premium = premiumFilter;
+    const t = await api.get("/api/tests", { params });
     const items = t.data.items || [];
     setTests(items);
 
@@ -78,7 +86,16 @@ export default function ManageTests() {
       })
     );
     setTestLbStatus(statuses);
-  }, [activeClass]);
+  }, [activeClass, premiumFilter]);
+
+  const bulkTestPremium = async (premiumOnly) => {
+    if (!selectedTests.length) { toast.error("Select at least one test"); return; }
+    try {
+      await api.post("/api/admin/content/bulk-premium", { content_type: "tests", ids: selectedTests, premium_only: premiumOnly });
+      toast.success(`Selected tests marked ${premiumOnly ? "Premium" : "Free"}`);
+      setSelectedTests([]); load();
+    } catch (err) { toast.error(formatApiError(err)); }
+  };
 
   const toggleTestLbRelease = async (testId) => {
     const current = !!testLbStatus[testId];
@@ -175,12 +192,35 @@ export default function ManageTests() {
     }
   };
 
-  const openNew = () => { setForm({ ...empty, class_level: activeClass }); setEditing(null); setShowAddQ(false); setQForm({ ...emptyQ }); setDraftQuestions([]); setOpen(true); };
-  const openEdit = (t) => { setForm({ ...empty, ...t }); setEditing(t._id); setShowAddQ(false); setQForm({ ...emptyQ }); setDraftQuestions([]); setOpen(true); };
+  const openNew = () => { setForm({ ...empty, class_level: activeClass === "all" ? "10" : activeClass }); setEditing(null); setShowAddQ(false); setQForm({ ...emptyQ }); setDraftQuestions([]); setOpen(true); };
+  const openEdit = (t) => {
+    setForm({
+      ...empty,
+      ...t,
+      start_date: t.start_date || t.scheduled_date || "",
+      end_date: t.end_date || (t.test_type === "final" ? t.scheduled_date : "") || "",
+      end_time: t.test_type === "mock" ? "" : (t.end_time || "21:00"),
+      question_ids: [...(t.question_ids || [])],
+    });
+    setEditing(t._id); setShowAddQ(false); setQForm({ ...emptyQ }); setDraftQuestions([]); setOpen(true);
+  };
 
   const save = async () => {
     try {
       const payload = { ...form };
+      payload.scheduled_date = payload.start_date;
+      if (!payload.title.trim()) { toast.error("Test title is required"); return; }
+      if (!payload.start_date || !payload.start_time) { toast.error("Start date and time are required"); return; }
+      const start = new Date(`${payload.start_date}T${payload.start_time}:00`);
+      if (!editing && start < new Date()) { toast.error("Start date and time cannot be in the past"); return; }
+      if (payload.test_type === "final") {
+        if (!payload.end_date || !payload.end_time) { toast.error("Final tests require an end date and time"); return; }
+        if (new Date(`${payload.end_date}T${payload.end_time}:00`) <= start) { toast.error("End date and time must be after the start"); return; }
+      } else {
+        payload.end_time = null;
+        if (payload.end_date && payload.end_date < payload.start_date) { toast.error("End date cannot precede start date"); return; }
+      }
+      if (!payload.duration_minutes || payload.duration_minutes < 1) { toast.error("Duration must be at least one minute"); return; }
       if (payload.unlock_score_required === "" || payload.unlock_score_required === null) payload.unlock_score_required = null;
       if (payload.prerequisite_test_id === "" || payload.prerequisite_test_id === "none") payload.prerequisite_test_id = null;
       if (editing) await api.put(`/api/tests/${editing}`, payload);
@@ -212,6 +252,44 @@ export default function ManageTests() {
       setAttemptsLoading(false);
     }
   };
+
+  const beginAttemptEdit = (attempt) => {
+    setEditingAttempt(attempt._id);
+    setAttemptEdit({
+      score: attempt.score ?? 0,
+      total_marks: attempt.total_marks ?? 0,
+      percent: attempt.percent ?? 0,
+      submitted: !!attempt.submitted_at,
+    });
+  };
+
+  const saveAttemptEdit = async () => {
+    try {
+      await api.put(`/api/admin/leaderboard/attempt/${editingAttempt}`, attemptEdit);
+      toast.success("Leaderboard result corrected and ranks recalculated");
+      setEditingAttempt(null);
+      if (attemptsTest) await openAttempts(attemptsTest);
+    } catch (err) { toast.error(formatApiError(err)); }
+  };
+
+  const today = new Date().toISOString().slice(0, 10);
+  const topics = [...new Set(questions.map((q) => q.topic).filter(Boolean))].sort();
+  const visibleQuestions = questions.filter((q) => {
+    const category = q.category || (q.is_published === false ? "draft" : "question_bank");
+    const created = (q.created_at || "").slice(0, 10);
+    const published = (q.published_at || "").slice(0, 10);
+    return (questionFilters.difficulty === "all" || q.difficulty === questionFilters.difficulty)
+      && (questionFilters.topic === "all" || q.topic === questionFilters.topic)
+      && (questionFilters.category === "all" || category === questionFilters.category)
+      && (questionFilters.premium === "all" || (questionFilters.premium === "premium") === !!q.premium_only)
+      && (!questionFilters.createdDate || created === questionFilters.createdDate)
+      && (!questionFilters.publishedDate || published === questionFilters.publishedDate);
+  });
+  const questionSections = ["easy", "medium", "hard"].map((difficulty) => ({
+    difficulty,
+    items: visibleQuestions.filter((q) => (q.difficulty || "medium") === difficulty),
+    selected: questions.filter((q) => (q.difficulty || "medium") === difficulty && form.question_ids.includes(q._id)).length,
+  }));
 
   const classesList = [
     { id: "all", label: "All Classes", desc: "View and manage tests across all grade levels", tone: "bg-purple-50 text-[#7C3AED] border-purple-200" },
@@ -303,12 +381,14 @@ export default function ManageTests() {
                     </div>
                   </div>
                   <div><Label>Description</Label><Textarea rows={2} value={form.description} onChange={(e) => setF("description", e.target.value)} /></div>
-                  <div className="grid grid-cols-4 gap-3">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     <div><Label>Class</Label><Select value={form.class_level} onValueChange={(v) => setF("class_level", v)}><SelectTrigger className="mt-1"><SelectValue /></SelectTrigger><SelectContent>{["8","9","10"].map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent></Select></div>
-                    <div><Label>Date</Label><Input type="date" data-testid="test-date-input" value={form.scheduled_date} onChange={(e) => setF("scheduled_date", e.target.value)} className="mt-1" /></div>
-                    <div><Label>Start (UTC)</Label><Input type="time" value={form.start_time} onChange={(e) => setF("start_time", e.target.value)} className="mt-1" /></div>
-                    <div><Label>End (UTC)</Label><Input type="time" value={form.end_time} onChange={(e) => setF("end_time", e.target.value)} className="mt-1" /></div>
+                    <div><Label>Start date</Label><Input type="date" min={editing ? undefined : today} data-testid="test-date-input" value={form.start_date || ""} onChange={(e) => setF("start_date", e.target.value)} className="mt-1" /></div>
+                    <div><Label>Start time (IST)</Label><Input type="time" value={form.start_time} onChange={(e) => setF("start_time", e.target.value)} className="mt-1" /></div>
+                    <div><Label>{form.test_type === "mock" ? "Optional end date" : "End date"}</Label><Input type="date" min={form.start_date || today} value={form.end_date || ""} onChange={(e) => setF("end_date", e.target.value)} className="mt-1" /></div>
+                    {form.test_type === "final" && <div><Label>End time (IST)</Label><Input type="time" value={form.end_time || ""} onChange={(e) => setF("end_time", e.target.value)} className="mt-1" /></div>}
                   </div>
+                  {form.test_type === "mock" && <p className="text-xs text-[#64748B]">Mock tests use the duration only. They remain available until unpublished, or through the optional end date.</p>}
                   <div className="grid grid-cols-3 gap-3">
                     <div><Label>Duration (min)</Label><Input type="number" value={form.duration_minutes} onChange={(e) => setF("duration_minutes", parseInt(e.target.value))} className="mt-1" /></div>
                     <div className="flex items-end gap-2"><Switch checked={form.negative_marking} onCheckedChange={(v) => setF("negative_marking", v)} id="neg" /><Label htmlFor="neg">Negative marking</Label></div>
@@ -570,32 +650,38 @@ export default function ManageTests() {
                 )}
 
                 {!showAddQ && (
-                  <div className="mt-2 max-h-56 overflow-y-auto border border-slate-200 rounded-lg divide-y divide-slate-100">
-                    {questions.map((q) => (
-                      <div key={q._id} className="flex items-center justify-between gap-4 p-3 hover:bg-slate-50" data-testid={`test-pick-q-${q._id}`}>
-                        <label className="flex items-start gap-3 cursor-pointer flex-1 min-w-0">
-                          <Checkbox checked={form.question_ids.includes(q._id)} onCheckedChange={() => toggleQ(q._id)} />
-                          <div className="flex-1 text-sm min-w-0">
-                            <div className="text-xs text-[#7C3AED] uppercase tracking-widest font-semibold">{q.topic || "(No topic)"}</div>
-                            <div className="text-[#0F1B4C] text-xs truncate" dangerouslySetInnerHTML={{ __html: q.question_text || "(Empty question text)" }} />
-                          </div>
-                        </label>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-red-500 hover:bg-red-50 hover:text-red-600 shrink-0"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            handleDeleteQuestion(q._id);
-                          }}
-                        >
-                          <Trash2 size={14} />
-                        </Button>
-                      </div>
-                    ))}
-                    {questions.length === 0 && <div className="p-4 text-sm text-[#64748B]">No questions for class {form.class_level}. Add some first.</div>}
+                  <div className="mt-3 space-y-3">
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2 rounded-xl bg-slate-50 border border-slate-200 p-3">
+                      <Select value={questionFilters.difficulty} onValueChange={(v) => setQuestionFilters((f) => ({ ...f, difficulty: v }))}><SelectTrigger><SelectValue placeholder="Difficulty" /></SelectTrigger><SelectContent><SelectItem value="all">All difficulties</SelectItem><SelectItem value="easy">Easy</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="hard">Hard</SelectItem></SelectContent></Select>
+                      <Select value={questionFilters.topic} onValueChange={(v) => setQuestionFilters((f) => ({ ...f, topic: v }))}><SelectTrigger><SelectValue placeholder="Topic/chapter" /></SelectTrigger><SelectContent><SelectItem value="all">All topics</SelectItem>{topics.map((topic) => <SelectItem key={topic} value={topic}>{topic}</SelectItem>)}</SelectContent></Select>
+                      <Select value={questionFilters.category} onValueChange={(v) => setQuestionFilters((f) => ({ ...f, category: v }))}><SelectTrigger><SelectValue placeholder="Destination" /></SelectTrigger><SelectContent><SelectItem value="all">All destinations</SelectItem><SelectItem value="question_bank">Question Bank</SelectItem><SelectItem value="daily_24h">Daily 24h</SelectItem><SelectItem value="draft">Drafts</SelectItem></SelectContent></Select>
+                      <Select value={questionFilters.premium} onValueChange={(v) => setQuestionFilters((f) => ({ ...f, premium: v }))}><SelectTrigger><SelectValue placeholder="Access" /></SelectTrigger><SelectContent><SelectItem value="all">All access</SelectItem><SelectItem value="free">Free</SelectItem><SelectItem value="premium">Premium</SelectItem></SelectContent></Select>
+                      <Input type="date" title="Created date" value={questionFilters.createdDate} onChange={(e) => setQuestionFilters((f) => ({ ...f, createdDate: e.target.value }))} />
+                      <Input type="date" title="Published date" value={questionFilters.publishedDate} onChange={(e) => setQuestionFilters((f) => ({ ...f, publishedDate: e.target.value }))} />
+                    </div>
+                    <div className="flex flex-wrap gap-2 text-xs">
+                      {questionSections.map((s) => <Badge key={s.difficulty} variant="outline" className="capitalize">{s.difficulty}: {s.selected} selected</Badge>)}
+                    </div>
+                    <div className="max-h-80 overflow-y-auto border border-slate-200 rounded-lg">
+                      {questionSections.map((section) => (
+                        <div key={section.difficulty}>
+                          <div className="sticky top-0 z-10 px-3 py-2 bg-slate-100 border-y border-slate-200 text-xs font-bold uppercase tracking-wider text-[#0F1B4C]">{section.difficulty} questions ({section.items.length}) · {section.selected} selected</div>
+                          {section.items.map((q) => (
+                            <div key={q._id} className="flex items-center justify-between gap-4 p-3 hover:bg-slate-50 border-b border-slate-100" data-testid={`test-pick-q-${q._id}`}>
+                              <label className="flex items-start gap-3 cursor-pointer flex-1 min-w-0">
+                                <Checkbox checked={form.question_ids.includes(q._id)} onCheckedChange={() => toggleQ(q._id)} />
+                                <div className="flex-1 text-sm min-w-0">
+                                  <div className="flex gap-2 items-center text-xs text-[#7C3AED] uppercase tracking-widest font-semibold"><span>{q.topic || "(No topic)"}</span><Badge className={q.premium_only ? "bg-amber-500" : "bg-emerald-600"}>{q.premium_only ? "Premium" : "Free"}</Badge></div>
+                                  <div className="text-[#0F1B4C] text-xs truncate" dangerouslySetInnerHTML={{ __html: q.question_text || "(Empty question text)" }} />
+                                </div>
+                              </label>
+                              <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:bg-red-50 shrink-0" onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleDeleteQuestion(q._id); }}><Trash2 size={14} /></Button>
+                            </div>
+                          ))}
+                        </div>
+                      ))}
+                      {visibleQuestions.length === 0 && <div className="p-4 text-sm text-[#64748B]">No questions match these filters.</div>}
+                    </div>
                   </div>
                 )}
               </div>
@@ -614,37 +700,46 @@ export default function ManageTests() {
         </Dialog>
       </div>
 
-      <div className="mt-8 grid md:grid-cols-2 gap-4">
+      <div className="mt-6 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
+        <Select value={premiumFilter} onValueChange={setPremiumFilter}><SelectTrigger className="w-40 bg-white"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All access</SelectItem><SelectItem value="free">Free</SelectItem><SelectItem value="premium">Premium</SelectItem></SelectContent></Select>
+        <Button size="sm" variant="outline" onClick={() => setSelectedTests(tests.map((t) => t._id))}>Select All</Button>
+        <Button size="sm" variant="ghost" onClick={() => setSelectedTests([])}>Clear</Button>
+        <span className="text-xs text-[#64748B]">{selectedTests.length} selected</span>
+        <Button size="sm" variant="outline" onClick={() => bulkTestPremium(false)}>Mark Free</Button>
+        <Button size="sm" variant="outline" onClick={() => bulkTestPremium(true)}>Mark Premium</Button>
+      </div>
+      <div className="mt-4 grid md:grid-cols-2 gap-4">
         {tests.map((t) => (
-          <Card key={t._id} className="rounded-2xl border-slate-200 p-6" data-testid={`admin-test-card-${t._id}`}>
+          <Card key={t._id} onClick={() => openEdit(t)} className="rounded-2xl border-slate-200 p-6 cursor-pointer hover:border-[#7C3AED] hover:shadow-md transition-all" data-testid={`admin-test-card-${t._id}`}>
+            <input type="checkbox" className="float-right w-4 h-4 accent-[#7C3AED]" checked={selectedTests.includes(t._id)} onClick={(e) => e.stopPropagation()} onChange={(e) => setSelectedTests((s) => e.target.checked ? [...s, t._id] : s.filter((id) => id !== t._id))} />
             <div className="flex items-start justify-between">
               <div>
                 <div className="flex items-center gap-2">
                   <Badge className={t.test_type === "final" ? "bg-[#7C3AED]" : "bg-slate-200 text-[#0F1B4C]"}>{t.test_type.toUpperCase()}</Badge>
                   {t.is_published ? <Badge className="bg-green-600">PUBLISHED</Badge> : <Badge variant="outline">DRAFT</Badge>}
-                  {t.premium_only && <Badge className="bg-amber-500">PREMIUM</Badge>}
+                  <Badge className={t.premium_only ? "bg-amber-500" : "bg-emerald-600"}>{t.premium_only ? "PREMIUM" : "FREE"}</Badge>
                 </div>
                 <div className="mt-3 font-serif text-xl text-[#0F1B4C] font-semibold">{t.title}</div>
-                <div className="text-xs text-[#64748B] mt-1">Class {t.class_level} · {t.scheduled_date} · {t.start_time}–{t.end_time} IST · {t.question_ids?.length || 0} qns</div>
+                <div className="text-xs text-[#64748B] mt-1">Class {t.class_level} · {t.start_date || t.scheduled_date} at {t.start_time} IST {t.test_type === "mock" ? `· ${t.duration_minutes} min${t.end_date ? ` · available until ${t.end_date}` : " · until unpublished"}` : `· ends ${t.end_date || t.scheduled_date} ${t.end_time} IST`} · {t.question_ids?.length || 0} qns</div>
               </div>
               <div className="flex flex-col items-end gap-2">
-                <Button variant="ghost" size="icon" onClick={() => openEdit(t)} data-testid={`test-edit-${t._id}`}><Pencil size={16} /></Button>
-                <Button variant="ghost" size="icon" onClick={() => del(t._id)} data-testid={`test-del-${t._id}`}><Trash2 size={16} className="text-red-500" /></Button>
+                <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); openEdit(t); }} data-testid={`test-edit-${t._id}`}><Pencil size={16} /></Button>
+                <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); del(t._id); }} data-testid={`test-del-${t._id}`}><Trash2 size={16} className="text-red-500" /></Button>
               </div>
             </div>
             <div className="mt-4 flex flex-wrap gap-2">
-              <Button variant="outline" size="sm" className="rounded-full" onClick={() => togglePublish(t)} data-testid={`test-toggle-pub-${t._id}`}>
+              <Button variant="outline" size="sm" className="rounded-full" onClick={(e) => { e.stopPropagation(); togglePublish(t); }} data-testid={`test-toggle-pub-${t._id}`}>
                 {t.is_published ? "Unpublish" : "Publish"}
               </Button>
               <a href={`/tests/${t._id}/result`} className="hidden" />
-              <Button variant="outline" size="sm" className="rounded-full" onClick={() => openAttempts(t)} data-testid={`test-attempts-${t._id}`}>
+              <Button variant="outline" size="sm" className="rounded-full" onClick={(e) => { e.stopPropagation(); openAttempts(t); }} data-testid={`test-attempts-${t._id}`}>
                 <ClipboardCheck size={14} className="mr-1" /> View attempts
               </Button>
               <Button
                 size="sm"
                 variant={testLbStatus[t._id] ? "outline" : "default"}
                 className={testLbStatus[t._id] ? "rounded-full border-amber-300 text-amber-700 bg-amber-50" : "rounded-full bg-[#7C3AED] hover:bg-[#6D28D9] text-white"}
-                onClick={() => toggleTestLbRelease(t._id)}
+                onClick={(e) => { e.stopPropagation(); toggleTestLbRelease(t._id); }}
                 data-testid={`test-release-lb-${t._id}`}
               >
                 {testLbStatus[t._id] ? "Leaderboard Released (Hide)" : "Release Leaderboard"}
@@ -682,6 +777,7 @@ export default function ManageTests() {
                     <th className="py-2 px-3 text-right">✓</th>
                     <th className="py-2 px-3 text-right">✗</th>
                     <th className="py-2 px-3 text-left">Submitted</th>
+                    <th className="py-2 px-3 text-right">Edit</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -704,10 +800,23 @@ export default function ManageTests() {
                       <td className="py-2 px-3 text-xs text-[#64748B]">
                         {a.submitted_at ? new Date(a.submitted_at).toLocaleString() : "—"}
                       </td>
+                      <td className="py-2 px-3 text-right"><Button variant="ghost" size="icon" onClick={() => beginAttemptEdit(a)}><Pencil size={14} /></Button></td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+              {editingAttempt && (
+                <div className="mt-4 rounded-xl border border-[#7C3AED]/20 bg-purple-50/50 p-4">
+                  <div className="font-semibold text-sm text-[#0F1B4C] mb-3">Correct leaderboard result</div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div><Label>Score</Label><Input type="number" step="0.25" value={attemptEdit.score} onChange={(e) => setAttemptEdit((s) => ({ ...s, score: Number(e.target.value) }))} /></div>
+                    <div><Label>Total marks</Label><Input type="number" step="0.25" value={attemptEdit.total_marks} onChange={(e) => setAttemptEdit((s) => ({ ...s, total_marks: Number(e.target.value) }))} /></div>
+                    <div><Label>Percentage</Label><Input type="number" min="0" max="100" step="0.01" value={attemptEdit.percent} onChange={(e) => setAttemptEdit((s) => ({ ...s, percent: Number(e.target.value) }))} /></div>
+                    <div className="flex items-end gap-2 pb-2"><Switch checked={attemptEdit.submitted} onCheckedChange={(v) => setAttemptEdit((s) => ({ ...s, submitted: v }))} /><Label>Submitted</Label></div>
+                  </div>
+                  <div className="mt-3 flex justify-end gap-2"><Button variant="outline" onClick={() => setEditingAttempt(null)}>Cancel</Button><Button onClick={saveAttemptEdit} className="bg-[#7C3AED]">Save correction</Button></div>
+                </div>
+              )}
             </div>
           )}
         </DialogContent>

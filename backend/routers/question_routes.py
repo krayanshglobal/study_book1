@@ -4,8 +4,14 @@ import io
 from fastapi import APIRouter, HTTPException, Depends, Query, UploadFile, File
 from bson import ObjectId
 from typing import Optional
-from models import QuestionCreate, QuestionUpdate, now_iso
+from models import QuestionCreate, QuestionUpdate, QuestionBulkAction, now_iso
 from auth import get_current_user, require_role
+from question_lifecycle import (
+    create_mastered_question,
+    delete_questions_and_orphaned_masters,
+    ensure_master_copy,
+    expire_daily_questions,
+)
 import logging
 
 logger = logging.getLogger(__name__)
@@ -110,7 +116,11 @@ async def bulk_upload_csv(
                     doc["correct_answer_text"] = opts[doc["correct_index"]]["text"]
             if not doc["question_text"]:
                 raise ValueError("question_text is empty")
-            await db.questions.insert_one(doc)
+            if doc["category"] == "daily_24h":
+                from datetime import datetime, timezone, timedelta
+                doc["published_at"] = now_iso()
+                doc["daily_expires_at"] = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
+            await create_mastered_question(db, doc, admin["_id"])
             inserted += 1
         except Exception as e:
             errors.append({"row": i, "error": str(e)})
@@ -126,6 +136,11 @@ async def list_questions(
     difficulty: Optional[str] = None,
     status: Optional[str] = None,
     category: Optional[str] = None,
+    premium: Optional[str] = None,
+    created_from: Optional[str] = None,
+    created_to: Optional[str] = None,
+    published_from: Optional[str] = None,
+    published_to: Optional[str] = None,
     search: Optional[str] = None,
     limit: int = Query(50, le=500),
     skip: int = Query(0, ge=0),
@@ -134,11 +149,14 @@ async def list_questions(
     from server import db
     from datetime import datetime, timezone, timedelta
 
+    await expire_daily_questions(db)
     conditions = []
     if user["role"] == "student":
         class_level = user.get("class_level")
         # Students ONLY see published questions (True or missing)
         conditions.append({"$or": [{"is_published": True}, {"is_published": {"$exists": False}}]})
+        if not user.get("subscription_active"):
+            conditions.append({"$or": [{"premium_only": False}, {"premium_only": {"$exists": False}}]})
     else:
         if status == "draft":
             conditions.append({"is_published": False})
@@ -177,6 +195,24 @@ async def list_questions(
         conditions.append({"difficulty": difficulty})
     if search:
         conditions.append({"question_text": {"$regex": search, "$options": "i"}})
+    if premium == "premium":
+        conditions.append({"premium_only": True})
+    elif premium == "free":
+        conditions.append({"$or": [{"premium_only": False}, {"premium_only": {"$exists": False}}]})
+    if created_from or created_to:
+        date_query = {}
+        if created_from:
+            date_query["$gte"] = f"{created_from}T00:00:00+00:00"
+        if created_to:
+            date_query["$lte"] = f"{created_to}T23:59:59.999999+00:00"
+        conditions.append({"created_at": date_query})
+    if published_from or published_to:
+        date_query = {}
+        if published_from:
+            date_query["$gte"] = f"{published_from}T00:00:00+00:00"
+        if published_to:
+            date_query["$lte"] = f"{published_to}T23:59:59.999999+00:00"
+        conditions.append({"published_at": date_query})
 
     q = {"$and": conditions} if conditions else {}
 
@@ -207,9 +243,53 @@ async def list_questions(
             it["is_expired"] = False
 
         if user["role"] == "student":
+            it.pop("correct_index", None)
             it.pop("correct_answer_text", None)
+            it.pop("explanation", None)
 
     return {"items": items, "total": total, "skip": skip, "limit": limit}
+
+
+@router.post("/bulk-action")
+async def bulk_question_action(
+    body: QuestionBulkAction,
+    admin=Depends(require_role("admin", "superadmin")),
+):
+    from server import db
+    from datetime import datetime, timezone, timedelta
+
+    object_ids = [ObjectId(qid) for qid in body.question_ids if ObjectId.is_valid(qid)]
+    if len(object_ids) != len(set(body.question_ids)):
+        raise HTTPException(status_code=400, detail="One or more question IDs are invalid or duplicated")
+
+    if body.action == "delete":
+        changed = await delete_questions_and_orphaned_masters(db, object_ids)
+        await db.admin_audit_logs.insert_one({
+            "action": "questions.bulk_delete", "record_ids": body.question_ids,
+            "admin_id": admin["_id"], "created_at": now_iso(),
+        })
+        return {"ok": True, "changed": changed}
+
+    now = datetime.now(timezone.utc)
+    updates = {
+        "move_question_bank": {"category": "question_bank", "is_published": True},
+        "move_draft": {"category": "draft", "is_published": False},
+        "publish_daily": {
+            "category": "daily_24h", "is_published": True,
+            "published_at": now.isoformat(),
+            "daily_expires_at": (now + timedelta(hours=24)).isoformat(),
+        },
+        "mark_free": {"premium_only": False},
+        "mark_premium": {"premium_only": True},
+    }
+    update = updates[body.action]
+    update["updated_at"] = now.isoformat()
+    result = await db.questions.update_many({"_id": {"$in": object_ids}}, {"$set": update})
+    if body.action != "publish_daily":
+        update_unset = {"daily_expires_at": ""} if body.action in {"move_question_bank", "move_draft"} else None
+        if update_unset:
+            await db.questions.update_many({"_id": {"$in": object_ids}}, {"$unset": update_unset})
+    return {"ok": True, "changed": result.modified_count}
 
 
 @router.get("/{qid}")
@@ -224,7 +304,14 @@ async def get_question(qid: str, user=Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="Not found")
     if user["role"] == "student" and q.get("class_level") != user.get("class_level"):
         raise HTTPException(status_code=403, detail="Access denied to this question's class level")
-    return _ser(q)
+    if user["role"] == "student" and q.get("premium_only") and not user.get("subscription_active"):
+        raise HTTPException(status_code=402, detail="Premium subscription required")
+    result = _ser(q)
+    if user["role"] == "student":
+        result.pop("correct_index", None)
+        result.pop("correct_answer_text", None)
+        result.pop("explanation", None)
+    return result
 
 
 @router.post("/{qid}/check")
@@ -241,6 +328,8 @@ async def check_answer(qid: str, body: dict, user=Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="Not found")
     if user["role"] == "student" and q.get("class_level") != user.get("class_level"):
         raise HTTPException(status_code=403, detail="Access denied to this question's class level")
+    if user["role"] == "student" and q.get("premium_only") and not user.get("subscription_active"):
+        raise HTTPException(status_code=402, detail="Premium subscription required")
     correct = False
     if q.get("q_type") == "mcq":
         correct = int(body.get("selected_index", -1)) == int(q.get("correct_index", -2))
@@ -356,8 +445,11 @@ async def create_question(body: QuestionCreate, admin=Depends(require_role("admi
 
     if doc.get("options"):
         doc["options"] = [o if isinstance(o, dict) else o.model_dump() for o in doc["options"]]
-    result = await db.questions.insert_one(doc)
-    doc["_id"] = str(result.inserted_id)
+    if doc.get("category") == "daily_24h":
+        from datetime import datetime, timezone, timedelta
+        doc["daily_expires_at"] = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
+    doc = await create_mastered_question(db, doc, admin["_id"])
+    doc["_id"] = str(doc["_id"])
     return doc
 
 
@@ -373,9 +465,10 @@ async def update_question(qid: str, body: QuestionUpdate, admin=Depends(require_
         upd["options"] = [o if isinstance(o, dict) else o.model_dump() for o in upd["options"]]
 
     if upd.get("category") == "daily_24h":
-        upd["created_at"] = now_iso()
+        from datetime import datetime, timezone, timedelta
         upd["published_at"] = now_iso()
         upd["updated_at"] = now_iso()
+        upd["daily_expires_at"] = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
         upd["is_published"] = True
         # Clear previous attempts so students must solve fresh!
         await db.question_attempts.delete_many({"question_id": str(oid)})
@@ -384,11 +477,46 @@ async def update_question(qid: str, body: QuestionUpdate, admin=Depends(require_
     elif upd.get("is_published") is True:
         upd["published_at"] = upd.get("publish_date") or now_iso()
 
-    await db.questions.update_one({"_id": oid}, {"$set": upd})
+    original = await db.questions.find_one({"_id": oid})
+    if not original:
+        raise HTTPException(status_code=404, detail="Question not found")
+    await ensure_master_copy(db, original, admin["_id"])
+    upd["updated_at"] = now_iso()
+    update_doc = {"$set": upd}
+    if upd.get("category") in {"draft", "question_bank"}:
+        update_doc["$unset"] = {"daily_expires_at": ""}
+    await db.questions.update_one({"_id": oid}, update_doc)
     q = await db.questions.find_one({"_id": oid})
     if not q:
         raise HTTPException(status_code=404, detail="Question not found")
     return _ser(q)
+
+
+@router.post("/{qid}/copy-draft")
+async def copy_question_to_draft(qid: str, admin=Depends(require_role("admin", "superadmin"))):
+    from server import db
+    oid = ObjectId(qid) if ObjectId.is_valid(qid) else None
+    if not oid:
+        raise HTTPException(status_code=400, detail="Invalid question ID")
+    source = await db.questions.find_one({"_id": oid})
+    if not source:
+        raise HTTPException(status_code=404, detail="Question not found")
+    existing = await db.questions.find_one({"source_question_id": qid, "category": "draft"})
+    if existing:
+        raise HTTPException(status_code=409, detail="A draft copy already exists for this question")
+    master_id = await ensure_master_copy(db, source, admin["_id"])
+    draft = {
+        k: v for k, v in source.items()
+        if k not in {"_id", "published_at", "daily_expires_at", "updated_at"}
+    }
+    draft.update({
+        "master_id": master_id, "source_question_id": qid,
+        "category": "draft", "is_published": False,
+        "published_at": None, "created_by": admin["_id"], "created_at": now_iso(),
+    })
+    result = await db.questions.insert_one(draft)
+    draft["_id"] = str(result.inserted_id)
+    return draft
 
 
 @router.post("/{qid}/publish")
@@ -425,7 +553,7 @@ async def delete_question(qid: str, admin=Depends(require_role("admin", "superad
         oid = ObjectId(qid)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid question ID")
-    result = await db.questions.delete_one({"_id": oid})
-    if result.deleted_count == 0:
+    deleted = await delete_questions_and_orphaned_masters(db, [oid])
+    if deleted == 0:
         raise HTTPException(status_code=404, detail="Question not found")
     return {"ok": True}

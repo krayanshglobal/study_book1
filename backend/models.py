@@ -86,6 +86,12 @@ class SubscriptionPatch(BaseModel):
     expires_at: Optional[str] = None         # or set explicit ISO expiry
 
 
+class UserBulkSubscriptionInput(BaseModel):
+    user_ids: List[str] = Field(min_length=1, max_length=500)
+    premium_only: bool
+    duration_days: int = Field(default=30, ge=1, le=1825)
+
+
 # ---------- Question ----------
 class QuestionOption(BaseModel):
     label: str
@@ -110,6 +116,7 @@ class QuestionCreate(BaseModel):
     is_published: Optional[bool] = True
     publish_date: Optional[str] = None
     category: Optional[Literal["question_bank", "daily_24h", "draft"]] = "question_bank"
+    premium_only: bool = False
 
 
 class QuestionUpdate(BaseModel):
@@ -130,6 +137,15 @@ class QuestionUpdate(BaseModel):
     is_published: Optional[bool] = None
     publish_date: Optional[str] = None
     category: Optional[Literal["question_bank", "daily_24h", "draft"]] = None
+    premium_only: Optional[bool] = None
+
+
+class QuestionBulkAction(BaseModel):
+    question_ids: List[str] = Field(min_length=1, max_length=500)
+    action: Literal[
+        "delete", "move_question_bank", "move_draft", "publish_daily",
+        "mark_free", "mark_premium"
+    ]
 
 
 # ---------- Test ----------
@@ -139,9 +155,11 @@ class TestCreate(BaseModel):
     test_type: Literal["mock", "final"] = "mock"
     class_level: Literal["8", "9", "10"]
     subject: str = "maths"
-    scheduled_date: str  # ISO date "2026-02-15"
+    scheduled_date: Optional[str] = None  # legacy alias for start_date
+    start_date: Optional[str] = None
     start_time: str = "20:00"  # HH:MM 24h
-    end_time: str = "21:00"
+    end_date: Optional[str] = None
+    end_time: Optional[str] = None
     duration_minutes: int = 60
     negative_marking: bool = True
     question_ids: List[str] = []
@@ -155,8 +173,13 @@ class TestUpdate(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
     scheduled_date: Optional[str] = None
+    start_date: Optional[str] = None
     start_time: Optional[str] = None
     end_time: Optional[str] = None
+    end_date: Optional[str] = None
+    test_type: Optional[Literal["mock", "final"]] = None
+    class_level: Optional[Literal["8", "9", "10"]] = None
+    subject: Optional[str] = None
     duration_minutes: Optional[int] = None
     negative_marking: Optional[bool] = None
     question_ids: Optional[List[str]] = None
@@ -301,6 +324,7 @@ class PromoBannerCreate(BaseModel):
     countdown_hours: int = 24
     is_active: bool = True
     class_level: Optional[str] = "all"
+    premium_only: bool = False
 
 
 class PromoBannerUpdate(BaseModel):
@@ -312,3 +336,18 @@ class PromoBannerUpdate(BaseModel):
     countdown_hours: Optional[int] = None
     is_active: Optional[bool] = None
     class_level: Optional[str] = None
+    premium_only: Optional[bool] = None
+
+
+class ContentBulkPremiumInput(BaseModel):
+    content_type: Literal["questions", "tests", "videos", "notes", "flashcards", "promos"]
+    ids: List[str] = Field(min_length=1, max_length=500)
+    premium_only: bool
+
+
+class LeaderboardAttemptUpdate(BaseModel):
+    score: Optional[float] = None
+    total_marks: Optional[float] = None
+    percent: Optional[float] = Field(default=None, ge=0, le=100)
+    total_points: Optional[float] = None
+    submitted: Optional[bool] = None

@@ -5,8 +5,10 @@ import BackButton from "@/components/BackButton";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Trophy, Medal, Crown, Lock, ArrowRight, ChevronRight, GraduationCap, FileText, RotateCcw } from "lucide-react";
+import { Trophy, Medal, Crown, Lock, ArrowRight, ChevronRight, GraduationCap, FileText, RotateCcw, Pencil } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -64,6 +66,8 @@ export default function Leaderboard() {
   // Admin release status state
   const [releaseStatus, setReleaseStatus] = useState(false);
   const [releaseLoading, setReleaseLoading] = useState(false);
+  const [editingRank, setEditingRank] = useState(null);
+  const [rankEdit, setRankEdit] = useState({ score: 0, total_marks: 0, total_points: 0, submitted: true });
 
   // Fetch published tests when class changes
   useEffect(() => {
@@ -170,6 +174,30 @@ export default function Leaderboard() {
   const handleSelectTest = (tId) => {
     setSelectedTestId(tId);
     setStep(3);
+  };
+
+  const beginRankEdit = (row) => {
+    setEditingRank(row);
+    setRankEdit({ score: row.score ?? 0, total_marks: row.total_marks ?? 0, total_points: row.total_points ?? 0, submitted: true });
+  };
+
+  const saveRankEdit = async () => {
+    try {
+      if (selectedTestId === "total") {
+        await api.put(`/api/admin/leaderboard/user/${editingRank.user_id}`, { total_points: Number(rankEdit.total_points) });
+      } else {
+        await api.put(`/api/admin/leaderboard/attempt/${editingRank.attempt_id}`, {
+          score: Number(rankEdit.score), total_marks: Number(rankEdit.total_marks), submitted: rankEdit.submitted,
+        });
+      }
+      toast.success("Leaderboard updated; ranks recalculated automatically");
+      setEditingRank(null);
+      const params = { limit: 100 };
+      if (classLevel !== "all") params.class_level = classLevel;
+      if (selectedTestId !== "total") params.test_id = selectedTestId;
+      const response = await api.get("/api/leaderboard", { params });
+      setItems(response.data.items || []);
+    } catch (err) { toast.error(err?.response?.data?.detail || "Failed to update leaderboard"); }
   };
 
   const classesList = [
@@ -407,6 +435,20 @@ export default function Leaderboard() {
               </Card>
             )}
 
+            {isAdmin && editingRank && (
+              <Card className="mt-4 p-5 rounded-2xl border-[#7C3AED]/30 bg-purple-50/50">
+                <div className="font-semibold text-[#0F1B4C]">Edit leaderboard — {editingRank.name}</div>
+                <div className="mt-3 grid grid-cols-2 md:grid-cols-3 gap-3">
+                  {selectedTestId === "total" ? (
+                    <div><Label>Total points</Label><Input type="number" step="0.25" value={rankEdit.total_points} onChange={(e) => setRankEdit((s) => ({ ...s, total_points: e.target.value }))} /></div>
+                  ) : (
+                    <><div><Label>Score</Label><Input type="number" step="0.25" value={rankEdit.score} onChange={(e) => setRankEdit((s) => ({ ...s, score: e.target.value }))} /></div><div><Label>Total marks</Label><Input type="number" step="0.25" value={rankEdit.total_marks} onChange={(e) => setRankEdit((s) => ({ ...s, total_marks: e.target.value }))} /></div><label className="flex items-end gap-2 pb-2"><input type="checkbox" checked={rankEdit.submitted} onChange={(e) => setRankEdit((s) => ({ ...s, submitted: e.target.checked }))} /> Submitted</label></>
+                  )}
+                </div>
+                <div className="mt-3 flex justify-end gap-2"><Button variant="outline" onClick={() => setEditingRank(null)}>Cancel</Button><Button onClick={saveRankEdit} className="bg-[#7C3AED]">Save correction</Button></div>
+              </Card>
+            )}
+
             {/* Blocked state or Rankings Table */}
             {blockedMsg ? (
               <UnreleasedCard message={blockedMsg} />
@@ -471,6 +513,7 @@ export default function Leaderboard() {
 
                       <div className="text-right">
                         <div className="font-mono text-xl text-[#2563EB] font-bold">{r.score ?? r.points ?? 0} pts</div>
+                        {isAdmin && <Button variant="ghost" size="sm" className="mt-1 h-7 text-xs" onClick={() => beginRankEdit(r)}><Pencil size={12} className="mr-1" /> Edit</Button>}
                       </div>
                     </motion.div>
                   );

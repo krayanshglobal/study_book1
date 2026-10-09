@@ -5,7 +5,8 @@ from bson import ObjectId
 from typing import Optional
 from models import (
     VideoCreate, VideoUpdate, PlanCreate, PlanUpdate, CheckoutInput, RazorpayVerifyInput,
-    AnnouncementCreate, UserUpdateAdmin, SubscriptionPatch, now_iso,
+    AnnouncementCreate, UserUpdateAdmin, SubscriptionPatch, UserBulkSubscriptionInput, ContentBulkPremiumInput,
+    LeaderboardAttemptUpdate, now_iso,
 )
 from auth import get_current_user, require_role, hash_password
 import logging
@@ -41,12 +42,26 @@ def _safe_oid(val: str, field: str = "ID") -> ObjectId:
         raise HTTPException(status_code=400, detail=f"Invalid {field} format")
 
 
+def _rank_test_leaderboard(items: list[dict], limit: int) -> list[dict]:
+    """Sort score corrections deterministically and rebuild contiguous ranks."""
+    ranked = sorted(
+        (dict(item) for item in items),
+        key=lambda item: (float(item.get("score", 0)), float(item.get("total_marks", 0))),
+        reverse=True,
+    )[:limit]
+    for rank, item in enumerate(ranked, start=1):
+        item["rank"] = rank
+        item["total_points"] = item.get("score", 0)
+    return ranked
+
+
 # =============== VIDEOS ===============
 @router.get("/api/videos")
 async def list_videos(
     class_level: Optional[str] = None,
     subject: Optional[str] = None,
     topic: Optional[str] = None,
+    premium: Optional[str] = None,
     limit: int = Query(50, le=200),
     skip: int = Query(0, ge=0),
     user=Depends(get_current_user),
@@ -59,8 +74,12 @@ async def list_videos(
         q["subject"] = subject
     if topic:
         q["topic"] = topic
+    if premium == "premium":
+        q["premium_only"] = True
+    elif premium == "free":
+        q["premium_only"] = {"$ne": True}
     if user["role"] == "student" and not user.get("subscription_active"):
-        q["premium_only"] = False
+        q["premium_only"] = {"$ne": True}
 
     cursor = db.videos.find(q).sort("_id", -1).skip(skip).limit(limit)
     items = [_ser(v) async for v in cursor]
@@ -117,6 +136,9 @@ async def leaderboard(
     # ── Release-gate: students only see leaderboard if admin released it ──
     is_admin = user["role"] in ("admin", "superadmin")
 
+    if not is_admin and not user.get("subscription_active"):
+        raise HTTPException(status_code=402, detail="Premium subscription required")
+
     if not is_admin:
         if test_id:
             # Check per-test release status (supports both test_lb_ and legacy final_lb_ keys)
@@ -164,6 +186,7 @@ async def leaderboard(
             u = user_map.get(uid)
             if u:
                 items.append({
+                    "attempt_id": str(a["_id"]),
                     "user_id": uid,
                     "name": u["name"],
                     "class_level": u.get("class_level"),
@@ -173,17 +196,7 @@ async def leaderboard(
                     "total_marks": a.get("total_marks", 0.0),
                 })
 
-        # Sort by score desc, then by total_marks desc
-        items.sort(key=lambda x: (x["score"], x["total_marks"]), reverse=True)
-
-        # Apply pagination/limit and add ranks
-        out = []
-        for rank, item in enumerate(items[:limit], start=1):
-            item["rank"] = rank
-            item["total_points"] = item["score"]
-            out.append(item)
-
-        return {"items": out}
+        return {"items": _rank_test_leaderboard(items, limit)}
 
     else:
         # Class rank based on test scores
@@ -269,6 +282,91 @@ async def set_test_lb_release(test_id: str, body: dict, admin=Depends(require_ro
             upsert=True,
         )
     return {"released": released}
+
+
+@router.put("/api/admin/leaderboard/attempt/{attempt_id}")
+async def edit_leaderboard_attempt(
+    attempt_id: str,
+    body: LeaderboardAttemptUpdate,
+    admin=Depends(require_role("admin", "superadmin")),
+):
+    from server import db
+    oid = _safe_oid(attempt_id, "attempt ID")
+    attempt = await db.test_attempts.find_one({"_id": oid})
+    if not attempt:
+        raise HTTPException(status_code=404, detail="Attempt not found")
+    changes = {k: v for k, v in body.model_dump().items() if v is not None}
+    user_points = changes.pop("total_points", None)
+    submitted = changes.pop("submitted", None)
+    if submitted is not None:
+        changes["submitted_at"] = now_iso() if submitted else None
+    if "score" in changes and "percent" not in changes:
+        total = float(changes.get("total_marks", attempt.get("total_marks", 0)) or 0)
+        changes["percent"] = round((float(changes["score"]) / total) * 100, 2) if total > 0 else 0
+    changes["leaderboard_edited_by"] = admin["_id"]
+    changes["leaderboard_edited_at"] = now_iso()
+    await db.test_attempts.update_one({"_id": oid}, {"$set": changes})
+    if user_points is not None and ObjectId.is_valid(attempt.get("user_id", "")):
+        await db.users.update_one(
+            {"_id": ObjectId(attempt["user_id"])},
+            {"$set": {"total_points": user_points}},
+        )
+    await db.admin_audit_logs.insert_one({
+        "action": "leaderboard.attempt_edit", "attempt_id": attempt_id,
+        "before": {k: attempt.get(k) for k in changes}, "after": changes,
+        "total_points": user_points, "admin_id": admin["_id"], "created_at": now_iso(),
+    })
+    updated = await db.test_attempts.find_one({"_id": oid})
+    return _ser(updated)
+
+
+@router.put("/api/admin/leaderboard/user/{user_id}")
+async def edit_leaderboard_user_points(
+    user_id: str,
+    body: LeaderboardAttemptUpdate,
+    admin=Depends(require_role("admin", "superadmin")),
+):
+    from server import db
+    if body.total_points is None:
+        raise HTTPException(status_code=422, detail="Total points is required")
+    oid = _safe_oid(user_id, "user ID")
+    user_doc = await db.users.find_one({"_id": oid})
+    if not user_doc:
+        raise HTTPException(status_code=404, detail="User not found")
+    await db.users.update_one({"_id": oid}, {"$set": {"total_points": body.total_points}})
+    await db.admin_audit_logs.insert_one({
+        "action": "leaderboard.user_points_edit", "user_id": user_id,
+        "before": {"total_points": user_doc.get("total_points", 0)},
+        "after": {"total_points": body.total_points},
+        "admin_id": admin["_id"], "created_at": now_iso(),
+    })
+    return {"ok": True, "total_points": body.total_points}
+
+
+@router.post("/api/admin/content/bulk-premium")
+async def bulk_content_premium(
+    body: ContentBulkPremiumInput,
+    admin=Depends(require_role("admin", "superadmin")),
+):
+    from server import db
+    collection_names = {
+        "questions": "questions", "tests": "tests", "videos": "videos",
+        "notes": "study_notes", "flashcards": "flashcards", "promos": "promos",
+    }
+    object_ids = [ObjectId(item_id) for item_id in body.ids if ObjectId.is_valid(item_id)]
+    if len(object_ids) != len(set(body.ids)):
+        raise HTTPException(status_code=400, detail="One or more IDs are invalid or duplicated")
+    collection = db[collection_names[body.content_type]]
+    result = await collection.update_many(
+        {"_id": {"$in": object_ids}},
+        {"$set": {"premium_only": body.premium_only, "updated_at": now_iso()}},
+    )
+    await db.admin_audit_logs.insert_one({
+        "action": "content.bulk_premium", "content_type": body.content_type,
+        "record_ids": body.ids, "premium_only": body.premium_only,
+        "admin_id": admin["_id"], "created_at": now_iso(),
+    })
+    return {"ok": True, "changed": result.modified_count}
 
 
 
@@ -676,6 +774,7 @@ async def admin_list_payments(
 async def admin_list_users(
     role: Optional[str] = None,
     class_level: Optional[str] = None,
+    subscription: Optional[str] = None,
     search: Optional[str] = None,
     limit: int = Query(50, le=200),
     skip: int = Query(0, ge=0),
@@ -685,8 +784,12 @@ async def admin_list_users(
     q: dict = {}
     if role:
         q["role"] = role
-    if class_level and class_level != "all" and not search:
+    if class_level and class_level != "all":
         q["class_level"] = class_level
+    if subscription == "premium":
+        q["subscription_active"] = True
+    elif subscription == "free":
+        q["subscription_active"] = {"$ne": True}
     if search:
         q["$or"] = [
             {"name": {"$regex": search, "$options": "i"}},
@@ -697,6 +800,31 @@ async def admin_list_users(
     items = [_ser(u) async for u in cursor]
     total = await db.users.count_documents(q)
     return {"items": items, "total": total}
+
+
+@router.post("/api/admin/users/bulk-subscription")
+async def admin_bulk_user_subscription(
+    body: UserBulkSubscriptionInput,
+    admin=Depends(require_role("admin", "superadmin")),
+):
+    from server import db
+    object_ids = [ObjectId(uid) for uid in body.user_ids if ObjectId.is_valid(uid)]
+    if len(object_ids) != len(set(body.user_ids)):
+        raise HTTPException(status_code=400, detail="One or more user IDs are invalid or duplicated")
+    changes = {"subscription_active": body.premium_only}
+    changes["subscription_expires_at"] = (
+        (datetime.now(timezone.utc) + timedelta(days=body.duration_days)).isoformat()
+        if body.premium_only else None
+    )
+    result = await db.users.update_many(
+        {"_id": {"$in": object_ids}, "role": "student"}, {"$set": changes}
+    )
+    await db.admin_audit_logs.insert_one({
+        "action": "users.bulk_subscription", "record_ids": body.user_ids,
+        "premium_only": body.premium_only, "duration_days": body.duration_days,
+        "admin_id": admin["_id"], "created_at": now_iso(),
+    })
+    return {"ok": True, "changed": result.modified_count}
 
 
 @router.get("/api/admin/users/{uid}")

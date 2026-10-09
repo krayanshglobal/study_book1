@@ -7,6 +7,7 @@ load_dotenv(ROOT_DIR / '.env')
 
 import os
 import logging
+import asyncio
 from datetime import datetime, timezone
 from fastapi import FastAPI, APIRouter, Request
 from fastapi.responses import JSONResponse
@@ -21,6 +22,19 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+_question_lifecycle_task = None
+
+
+async def _question_lifecycle_loop():
+    from question_lifecycle import expire_daily_questions
+    while True:
+        try:
+            moved = await expire_daily_questions(db)
+            if moved:
+                logger.info("Moved %s expired Daily 24h questions to Question Bank", moved)
+        except Exception as exc:
+            logger.error("Question lifecycle processing failed: %s", exc)
+        await asyncio.sleep(300)
 
 # ─────────────────────────────────────────
 # Environment validation
@@ -360,6 +374,7 @@ async def _seed_test_credentials_file():
 
 @app.on_event("startup")
 async def _startup():
+    global _question_lifecycle_task
     logger.info("C Maths API starting up...")
     try:
         # Verify MongoDB connectivity
@@ -377,8 +392,12 @@ async def _startup():
         await db.users.create_index("firebase_uid", unique=True, sparse=True)
         await db.users.create_index([("role", 1), ("total_points", -1)])
         await db.questions.create_index([("class_level", 1), ("topic", 1)])
+        await db.questions.create_index([("category", 1), ("daily_expires_at", 1)])
+        await db.questions.create_index([("difficulty", 1), ("premium_only", 1)])
+        await db.questions.create_index("source_question_id", sparse=True)
         await db.questions.create_index([("question_text", "text")])   # text search index
         await db.tests.create_index([("scheduled_date", 1)])
+        await db.tests.create_index([("start_date", 1), ("end_date", 1)])
         await db.test_attempts.create_index([("user_id", 1), ("test_id", 1)], unique=True)
         await db.test_attempts.create_index([("test_id", 1), ("score", -1)])
         await db.login_attempts.create_index("identifier")
@@ -390,6 +409,7 @@ async def _startup():
         await db.payment_transactions.create_index("session_id", unique=True)
         await db.payment_transactions.create_index("order_id", unique=True, sparse=True)
         await db.payment_transactions.create_index("payment_id", sparse=True)
+        await db.question_masters.create_index("operational_question_id", unique=True)
         logger.info("MongoDB indexes: OK")
 
         # Seed users
@@ -442,6 +462,14 @@ async def _startup():
         await _seed_sample_data()
         await _seed_test_credentials_file()
 
+        # Backfill immutable master snapshots for existing questions.
+        from question_lifecycle import ensure_master_copy, expire_daily_questions
+        async for question in db.questions.find({"master_id": {"$exists": False}}):
+            await ensure_master_copy(db, question, question.get("created_by"))
+        await expire_daily_questions(db)
+        if _question_lifecycle_task is None or _question_lifecycle_task.done():
+            _question_lifecycle_task = asyncio.create_task(_question_lifecycle_loop())
+
         # Automatic student_id backfill for any existing users without student_id
         from routers.auth_routes import _generate_student_id
         async for u in db.users.find({"$or": [{"student_id": {"$exists": False}}, {"student_id": None}, {"student_id": ""}]}):
@@ -456,5 +484,12 @@ async def _startup():
 
 @app.on_event("shutdown")
 async def _shutdown():
+    global _question_lifecycle_task
     logger.info("C Maths API shutting down...")
+    if _question_lifecycle_task:
+        _question_lifecycle_task.cancel()
+        try:
+            await _question_lifecycle_task
+        except asyncio.CancelledError:
+            pass
     client.close()

@@ -38,6 +38,7 @@ async def list_notes(
     subject: Optional[str] = None,
     topic: Optional[str] = None,
     search: Optional[str] = None,
+    premium: Optional[str] = None,
     user=Depends(get_current_user)
 ):
     from server import db
@@ -53,6 +54,10 @@ async def list_notes(
             {"title": {"$regex": search, "$options": "i"}},
             {"content": {"$regex": search, "$options": "i"}},
         ]
+    if premium == "premium":
+        q["premium_only"] = True
+    elif premium == "free":
+        q["premium_only"] = {"$ne": True}
 
     cursor = db.study_notes.find(q).sort("_id", -1)
     notes = []
@@ -281,6 +286,7 @@ async def list_flashcards(
     class_level: Optional[str] = None,
     subject: Optional[str] = None,
     topic: Optional[str] = None,
+    premium: Optional[str] = None,
     user=Depends(get_current_user)
 ):
     from server import db
@@ -302,6 +308,10 @@ async def list_flashcards(
             {"topic": None},
             {"topic": {"$exists": False}}
         ]
+    if premium == "premium":
+        q["premium_only"] = True
+    elif premium == "free":
+        q["premium_only"] = {"$ne": True}
 
     cursor = db.flashcards.find(q).sort("created_at", 1)
     items = await cursor.to_list(length=200)
@@ -309,12 +319,15 @@ async def list_flashcards(
     # Fallback 1: If topic filter returned 0 items, search for all flashcards in this class_level
     if not items and "class_level" in q:
         fallback_q = {"class_level": q["class_level"]}
+        if "premium_only" in q:
+            fallback_q["premium_only"] = q["premium_only"]
         cursor = db.flashcards.find(fallback_q).sort("created_at", 1)
         items = await cursor.to_list(length=200)
 
     # Fallback 2: If still 0 items, return all flashcards available
     if not items:
-        cursor = db.flashcards.find({}).sort("created_at", 1)
+        fallback_q = {"premium_only": q["premium_only"]} if "premium_only" in q else {}
+        cursor = db.flashcards.find(fallback_q).sort("created_at", 1)
         items = await cursor.to_list(length=200)
 
     is_premium = user["role"] in ("admin", "superadmin") or user.get("subscription_active", False)
@@ -375,7 +388,11 @@ async def delete_flashcard(fid: str, _=Depends(require_role("admin", "superadmin
 
 # =============== PROMO BANNERS ===============
 @router.get("/api/promos")
-async def list_promos(class_level: Optional[str] = None):
+async def list_promos(
+    class_level: Optional[str] = None,
+    premium: Optional[str] = None,
+    user=Depends(get_current_user),
+):
     from server import db
     q = {"is_active": {"$ne": False}}
     if class_level and class_level != "all":
@@ -385,6 +402,12 @@ async def list_promos(class_level: Optional[str] = None):
             {"class_level": None},
             {"class_level": {"$exists": False}}
         ]
+    if premium == "premium":
+        q["premium_only"] = True
+    elif premium == "free":
+        q["premium_only"] = {"$ne": True}
+    if user["role"] == "student" and not user.get("subscription_active"):
+        q["premium_only"] = {"$ne": True}
     cursor = db.promos.find(q).sort("created_at", -1)
     items = await cursor.to_list(length=50)
     return {"items": [_ser(x) for x in items]}
@@ -402,6 +425,7 @@ async def create_promo(body: PromoBannerCreate, user=Depends(require_role("admin
         "countdown_hours": body.countdown_hours,
         "is_active": body.is_active,
         "class_level": body.class_level or "all",
+        "premium_only": body.premium_only,
         "created_at": now_iso(),
         "created_by": str(user["_id"])
     }

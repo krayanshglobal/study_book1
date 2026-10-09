@@ -22,13 +22,17 @@ export default function ManageVideos() {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ ...empty, class_level: activeClass });
   const [editing, setEditing] = useState(null);
+  const [premiumFilter, setPremiumFilter] = useState("all");
+  const [selected, setSelected] = useState([]);
 
   const load = useCallback(async () => {
     const params = {};
     if (activeClass !== "all") params.class_level = activeClass;
+    if (premiumFilter !== "all") params.premium = premiumFilter;
     const r = await api.get("/api/videos", { params });
     setItems(r.data.items || []);
-  }, [activeClass]);
+    setSelected((current) => current.filter((id) => (r.data.items || []).some((item) => item._id === id)));
+  }, [activeClass, premiumFilter]);
 
   useEffect(() => {
     setForm((f) => ({ ...f, class_level: activeClass === "all" ? "8" : activeClass }));
@@ -70,6 +74,16 @@ export default function ManageVideos() {
   };
 
   const del = async (id) => { if (!window.confirm("Delete?")) return; await api.delete(`/api/videos/${id}`); toast.success("Deleted"); load(); };
+
+  const bulkPremium = async (premiumOnly) => {
+    if (!selected.length) return toast.error("Select at least one video");
+    try {
+      await api.post("/api/admin/content/bulk-premium", { content_type: "videos", ids: selected, premium_only: premiumOnly });
+      toast.success(`Selected videos marked ${premiumOnly ? "Premium" : "Free"}`);
+      setSelected([]);
+      load();
+    } catch (err) { toast.error(formatApiError(err)); }
+  };
 
   const classesList = [
     { id: "all", label: "All Classes", desc: "View and manage video lessons across all grade levels", tone: "bg-purple-50 text-[#7C3AED] border-purple-200" },
@@ -161,16 +175,26 @@ export default function ManageVideos() {
             </Dialog>
           </div>
 
-          <div className="mt-8 grid md:grid-cols-2 lg:grid-cols-3 gap-5">
+          <div className="mt-6 flex flex-wrap items-center gap-2">
+            <Select value={premiumFilter} onValueChange={setPremiumFilter}>
+              <SelectTrigger className="w-40 rounded-full"><SelectValue /></SelectTrigger>
+              <SelectContent><SelectItem value="all">All access</SelectItem><SelectItem value="free">Free</SelectItem><SelectItem value="premium">Premium</SelectItem></SelectContent>
+            </Select>
+            <Button variant="outline" size="sm" disabled={!selected.length} onClick={() => bulkPremium(false)}>Mark Free</Button>
+            <Button variant="outline" size="sm" disabled={!selected.length} onClick={() => bulkPremium(true)}>Mark Premium</Button>
+            <span className="text-xs text-slate-500">{selected.length} selected</span>
+          </div>
+          <div className="mt-4 grid md:grid-cols-2 lg:grid-cols-3 gap-5">
             {items.map((v) => (
               <Card key={v._id} className="rounded-2xl border-slate-200 overflow-hidden">
+                <input type="checkbox" aria-label={`Select ${v.title}`} className="m-3 h-4 w-4" checked={selected.includes(v._id)} onChange={(e) => setSelected((ids) => e.target.checked ? [...ids, v._id] : ids.filter((id) => id !== v._id))} />
                 <img src={v.thumbnail_url || "https://images.unsplash.com/photo-1509228468518-180dd4864904"} alt="" className="w-full h-40 object-cover" />
                 <div className="p-5">
                   <div className="text-xs tracking-widest uppercase text-[#7C3AED] font-semibold">Class {v.class_level} · {v.topic}</div>
                   <div className="mt-1 font-serif text-lg text-[#0F1B4C]">{v.title}</div>
                   <a href={v.url} target="_blank" rel="noreferrer" className="mt-1 text-xs text-[#2563EB] hover:underline truncate block">{v.url}</a>
                   <div className="mt-3 flex justify-between items-center">
-                    {v.premium_only && <span className="text-xs bg-amber-500 text-white px-2 py-0.5 rounded">Premium</span>}
+                    <span className={`text-xs text-white px-2 py-0.5 rounded ${v.premium_only ? "bg-amber-500" : "bg-emerald-600"}`}>{v.premium_only ? "Premium" : "Free"}</span>
                     <div className="flex gap-1 ml-auto">
                       <Button variant="ghost" size="icon" onClick={() => openEdit(v)} data-testid={`video-edit-${v._id}`}><Pencil size={15} /></Button>
                       <Button variant="ghost" size="icon" onClick={() => del(v._id)} data-testid={`video-del-${v._id}`}><Trash2 size={16} className="text-red-500" /></Button>

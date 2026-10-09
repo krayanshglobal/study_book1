@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import api, { formatApiError } from "@/lib/api";
 import BackButton from "@/components/BackButton";
 import { Button } from "@/components/ui/button";
@@ -22,22 +22,26 @@ export default function ManageNotes() {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ ...empty, class_level: activeClass });
   const [editingId, setEditingId] = useState(null);
+  const [premiumFilter, setPremiumFilter] = useState("all");
+  const [selected, setSelected] = useState([]);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     try {
       const params = {};
       if (activeClass !== "all") params.class_level = activeClass;
+      if (premiumFilter !== "all") params.premium = premiumFilter;
       const r = await api.get("/api/notes", { params });
       setItems(r.data.items || []);
+      setSelected((current) => current.filter((id) => (r.data.items || []).some((item) => item._id === id)));
     } catch (err) {
       toast.error("Failed to load study notes.");
     }
-  };
+  }, [activeClass, premiumFilter]);
 
   useEffect(() => {
     setForm((f) => ({ ...f, class_level: activeClass === "all" ? "8" : activeClass }));
     load();
-  }, [activeClass]);
+  }, [activeClass, load]);
 
   const handleSelectClass = (cls) => {
     setActiveClass(cls);
@@ -94,6 +98,16 @@ export default function ManageNotes() {
     } catch (err) {
       toast.error(formatApiError(err));
     }
+  };
+
+  const bulkPremium = async (premiumOnly) => {
+    if (!selected.length) return toast.error("Select at least one note");
+    try {
+      await api.post("/api/admin/content/bulk-premium", { content_type: "notes", ids: selected, premium_only: premiumOnly });
+      toast.success(`Selected notes marked ${premiumOnly ? "Premium" : "Free"}`);
+      setSelected([]);
+      load();
+    } catch (err) { toast.error(formatApiError(err)); }
   };
 
   const classesList = [
@@ -172,9 +186,16 @@ export default function ManageNotes() {
             </Button>
           </div>
 
-      <div className="mt-8 grid md:grid-cols-2 lg:grid-cols-3 gap-5">
+      <div className="mt-6 flex flex-wrap items-center gap-2">
+        <Select value={premiumFilter} onValueChange={setPremiumFilter}><SelectTrigger className="w-40 rounded-full"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All access</SelectItem><SelectItem value="free">Free</SelectItem><SelectItem value="premium">Premium</SelectItem></SelectContent></Select>
+        <Button variant="outline" size="sm" disabled={!selected.length} onClick={() => bulkPremium(false)}>Mark Free</Button>
+        <Button variant="outline" size="sm" disabled={!selected.length} onClick={() => bulkPremium(true)}>Mark Premium</Button>
+        <span className="text-xs text-slate-500">{selected.length} selected</span>
+      </div>
+      <div className="mt-4 grid md:grid-cols-2 lg:grid-cols-3 gap-5">
         {items.map((n) => (
           <Card key={n._id} className="rounded-2xl border-slate-200 overflow-hidden flex flex-col justify-between shadow-sm hover:shadow-md transition-shadow">
+            <input type="checkbox" aria-label={`Select ${n.title}`} className="m-3 h-4 w-4" checked={selected.includes(n._id)} onChange={(e) => setSelected((ids) => e.target.checked ? [...ids, n._id] : ids.filter((id) => id !== n._id))} />
             <div className="p-5 flex-1">
               <div className="text-xs tracking-widest uppercase text-[#7C3AED] font-semibold">
                 Class {n.class_level} · {n.subject} · {n.topic}
@@ -187,7 +208,7 @@ export default function ManageNotes() {
             </div>
             <div className="px-5 py-3 bg-slate-50/50 border-t border-slate-100 flex items-center justify-between">
               <div>
-                {n.premium_only && <span className="text-[10px] bg-amber-500 text-white px-2 py-0.5 rounded-full uppercase tracking-wider font-bold">Premium</span>}
+                <span className={`text-[10px] text-white px-2 py-0.5 rounded-full uppercase tracking-wider font-bold ${n.premium_only ? "bg-amber-500" : "bg-emerald-600"}`}>{n.premium_only ? "Premium" : "Free"}</span>
               </div>
               <div className="flex gap-1">
                 <Button variant="ghost" size="icon" onClick={() => startEdit(n)}><Edit size={15} className="text-[#334155]" /></Button>

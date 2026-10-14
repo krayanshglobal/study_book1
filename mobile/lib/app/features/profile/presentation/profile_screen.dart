@@ -29,6 +29,11 @@ ImageProvider? _getUserAvatarProvider(String? avatarUrl) {
   return NetworkImage(trimmed);
 }
 
+bool _isGeneratedOtpEmail(String email) {
+  final value = email.trim().toLowerCase();
+  return value.startsWith('user_') && value.endsWith('@studybook.com');
+}
+
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
 
@@ -43,6 +48,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   bool _uploadingPhoto = false;
 
   final _nameCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
   String _selectedClass = '';
 
@@ -57,6 +63,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   @override
   void dispose() {
     _nameCtrl.dispose();
+    _emailCtrl.dispose();
     _phoneCtrl.dispose();
     super.dispose();
   }
@@ -65,6 +72,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final user = ref.read(authProvider).user;
     if (user != null) {
       _nameCtrl.text = user.name;
+      _emailCtrl.text = _isGeneratedOtpEmail(user.email) ? '' : user.email;
       _phoneCtrl.text = user.phone ?? '';
       _selectedClass = user.classLevel ?? '';
     }
@@ -72,13 +80,43 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   }
 
   Future<void> _saveProfile() async {
+    final user = ref.read(authProvider).user;
+    final email = _emailCtrl.text.trim();
+    if (email.isEmpty && user?.phoneAuth != true) {
+      showToast(context, 'Email is required for password-based accounts',
+          isError: true);
+      return;
+    }
+    if (email.isNotEmpty &&
+        !RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(email)) {
+      showToast(context, 'Enter a valid email address or leave it blank',
+          isError: true);
+      return;
+    }
     setState(() => _saving = true);
     try {
-      await dioClient.post('/api/auth/profile', data: {
+      final response = await dioClient.post('/api/auth/profile', data: {
         'name': _nameCtrl.text.trim(),
+        'email': email,
         'phone': _phoneCtrl.text.trim(),
       });
-      await ref.read(authProvider.notifier).refresh();
+      final updatedUser = Map<String, dynamic>.from(response.data as Map);
+      final returnedEmail =
+          updatedUser['email']?.toString().trim().toLowerCase() ?? '';
+      final emailWasApplied = email.isEmpty
+          ? _isGeneratedOtpEmail(returnedEmail)
+          : returnedEmail == email.toLowerCase();
+      if (!emailWasApplied) {
+        if (mounted) {
+          showToast(
+            context,
+            'Email was not updated by the server. Deploy the latest backend and try again.',
+            isError: true,
+          );
+        }
+        return;
+      }
+      await ref.read(authProvider.notifier).applyUpdatedUser(updatedUser);
       if (!mounted) return;
       setState(() => _editing = false);
       showToast(context, 'Profile updated');
@@ -126,19 +164,26 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               ListTile(
-                leading: const Icon(Icons.photo_library_outlined, color: AppColors.blue),
-                title: Text('Choose from Gallery', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+                leading: const Icon(Icons.photo_library_outlined,
+                    color: AppColors.blue),
+                title: Text('Choose from Gallery',
+                    style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
                 onTap: () => Navigator.pop(ctx, ImageSource.gallery),
               ),
               ListTile(
-                leading: const Icon(Icons.camera_alt_outlined, color: AppColors.violet),
-                title: Text('Take a Photo', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+                leading: const Icon(Icons.camera_alt_outlined,
+                    color: AppColors.violet),
+                title: Text('Take a Photo',
+                    style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
                 onTap: () => Navigator.pop(ctx, ImageSource.camera),
               ),
               if (ref.read(authProvider).user?.avatarUrl?.isNotEmpty == true)
                 ListTile(
-                  leading: const Icon(Icons.delete_outline_rounded, color: AppColors.error),
-                  title: Text('Remove Photo', style: GoogleFonts.inter(fontWeight: FontWeight.w600, color: AppColors.error)),
+                  leading: const Icon(Icons.delete_outline_rounded,
+                      color: AppColors.error),
+                  title: Text('Remove Photo',
+                      style: GoogleFonts.inter(
+                          fontWeight: FontWeight.w600, color: AppColors.error)),
                   onTap: () async {
                     Navigator.pop(ctx);
                     await _removePhoto();
@@ -156,7 +201,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     if (picked == null) return;
 
     final path = picked.path.toLowerCase();
-    final isJpgPng = path.endsWith('.jpg') || path.endsWith('.jpeg') || path.endsWith('.png');
+    final isJpgPng = path.endsWith('.jpg') ||
+        path.endsWith('.jpeg') ||
+        path.endsWith('.png');
     final bytes = await picked.readAsBytes();
 
     if (!isJpgPng || bytes.length > 2 * 1024 * 1024) {
@@ -266,11 +313,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: _EditForm(
                   nameCtrl: _nameCtrl,
+                  emailCtrl: _emailCtrl,
                   phoneCtrl: _phoneCtrl,
                   selectedClass: _selectedClass,
                   currentClass: user.classLevel,
                   saving: _saving,
                   requestingClass: _requestingClass,
+                  emailOptional: user.phoneAuth,
                   onClassChanged: (v) =>
                       setState(() => _selectedClass = v ?? ''),
                   onSave: _saveProfile,
@@ -290,7 +339,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     _InfoRow(
                         icon: Icons.mail_outline_rounded,
                         label: 'Email',
-                        value: user.email),
+                        value: _isGeneratedOtpEmail(user.email)
+                            ? 'Not provided'
+                            : user.email),
                     if (user.isAdmin)
                       _InfoRow(
                           icon: Icons.admin_panel_settings_outlined,
@@ -308,7 +359,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       _InfoRow(
                           icon: Icons.school_outlined,
                           label: 'Class',
-                          value: user.classLevel != null ? 'Class ${user.classLevel}' : '—'),
+                          value: user.classLevel != null
+                              ? 'Class ${user.classLevel}'
+                              : '—'),
                     ],
                     _InfoRow(
                         icon: Icons.phone_outlined,
@@ -334,9 +387,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   ],
                 ),
               ),
-
               const SizedBox(height: 24),
-
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Column(
@@ -382,9 +433,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   ],
                 ),
               ),
-
               const SizedBox(height: 24),
-
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Column(
@@ -420,7 +469,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   ],
                 ),
               ),
-
               const SizedBox(height: 40),
             ],
           ],
@@ -483,7 +531,6 @@ class _ProfileHeader extends StatelessWidget {
               color: Colors.white.withAlpha(18),
             ),
           ),
-
           Row(
             children: [
               // Avatar with edit button
@@ -586,7 +633,8 @@ class _ProfileHeader extends StatelessWidget {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(Icons.badge_outlined, size: 12, color: Colors.white70),
+                            const Icon(Icons.badge_outlined,
+                                size: 12, color: Colors.white70),
                             const SizedBox(width: 4),
                             Text(
                               'ID: $studentId',
@@ -670,8 +718,8 @@ class _InfoCard extends StatelessWidget {
           return Column(
             children: [
               Padding(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 16, vertical: 14),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                 child: Row(
                   children: [
                     Icon(row.icon, size: 18, color: AppColors.slate400),
@@ -730,8 +778,7 @@ class _InfoCard extends StatelessWidget {
                 ),
               ),
               if (i < rows.length - 1)
-                const Divider(
-                    height: 1, color: AppColors.slate200, indent: 46),
+                const Divider(height: 1, color: AppColors.slate200, indent: 46),
             ],
           );
         }).toList(),
@@ -803,12 +850,8 @@ class _MenuCard extends StatelessWidget {
               InkWell(
                 onTap: item.onTap,
                 borderRadius: BorderRadius.only(
-                  topLeft: i == 0
-                      ? const Radius.circular(16)
-                      : Radius.zero,
-                  topRight: i == 0
-                      ? const Radius.circular(16)
-                      : Radius.zero,
+                  topLeft: i == 0 ? const Radius.circular(16) : Radius.zero,
+                  topRight: i == 0 ? const Radius.circular(16) : Radius.zero,
                   bottomLeft: i == items.length - 1
                       ? const Radius.circular(16)
                       : Radius.zero,
@@ -817,8 +860,8 @@ class _MenuCard extends StatelessWidget {
                       : Radius.zero,
                 ),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 15),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
                   child: Row(
                     children: [
                       Icon(item.icon,
@@ -843,8 +886,7 @@ class _MenuCard extends StatelessWidget {
                 ),
               ),
               if (item.showDivider)
-                const Divider(
-                    height: 1, color: AppColors.slate200, indent: 50),
+                const Divider(height: 1, color: AppColors.slate200, indent: 50),
             ],
           );
         }).toList(),
@@ -855,11 +897,13 @@ class _MenuCard extends StatelessWidget {
 
 class _EditForm extends StatelessWidget {
   final TextEditingController nameCtrl;
+  final TextEditingController emailCtrl;
   final TextEditingController phoneCtrl;
   final String selectedClass;
   final String? currentClass;
   final bool saving;
   final bool requestingClass;
+  final bool emailOptional;
   final ValueChanged<String?> onClassChanged;
   final VoidCallback onSave;
   final VoidCallback onRequestClass;
@@ -867,11 +911,13 @@ class _EditForm extends StatelessWidget {
 
   const _EditForm({
     required this.nameCtrl,
+    required this.emailCtrl,
     required this.phoneCtrl,
     required this.selectedClass,
     required this.currentClass,
     required this.saving,
     required this.requestingClass,
+    required this.emailOptional,
     required this.onClassChanged,
     required this.onSave,
     required this.onRequestClass,
@@ -881,8 +927,7 @@ class _EditForm extends StatelessWidget {
   InputDecoration _inputDec(String hint) {
     return InputDecoration(
       hintText: hint,
-      contentPadding:
-          const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
@@ -922,7 +967,6 @@ class _EditForm extends StatelessWidget {
                   fontWeight: FontWeight.w600,
                   color: AppColors.navy)),
           const SizedBox(height: 20),
-
           _label('Full Name'),
           TextField(
             controller: nameCtrl,
@@ -930,7 +974,14 @@ class _EditForm extends StatelessWidget {
             style: GoogleFonts.inter(fontSize: 14),
           ),
           const SizedBox(height: 14),
-
+          _label(emailOptional ? 'Email (optional)' : 'Email'),
+          TextField(
+            controller: emailCtrl,
+            decoration: _inputDec('you@example.com'),
+            keyboardType: TextInputType.emailAddress,
+            style: GoogleFonts.inter(fontSize: 14),
+          ),
+          const SizedBox(height: 14),
           _label('Phone'),
           TextField(
             controller: phoneCtrl,
@@ -939,7 +990,6 @@ class _EditForm extends StatelessWidget {
             style: GoogleFonts.inter(fontSize: 14),
           ),
           const SizedBox(height: 14),
-
           _label('Class (change requires admin approval)'),
           DropdownButtonFormField<String>(
             initialValue: selectedClass.isNotEmpty ? selectedClass : null,
@@ -961,7 +1011,6 @@ class _EditForm extends StatelessWidget {
               ),
             ),
           const SizedBox(height: 20),
-
           Row(
             children: [
               ElevatedButton(
@@ -970,8 +1019,8 @@ class _EditForm extends StatelessWidget {
                   backgroundColor: AppColors.navy,
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(99)),
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 20, vertical: 12),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                 ),
                 child: saving
                     ? const SizedBox(

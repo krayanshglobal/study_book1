@@ -8,7 +8,7 @@ from models import (
     AnnouncementCreate, UserUpdateAdmin, SubscriptionPatch, UserBulkSubscriptionInput, ContentBulkPremiumInput,
     LeaderboardAttemptUpdate, now_iso,
 )
-from auth import get_current_user, require_role, hash_password
+from auth import get_current_user, require_premium, require_role, hash_password
 import logging
 from decimal import Decimal, ROUND_HALF_UP
 from pymongo import ReturnDocument
@@ -64,7 +64,7 @@ async def list_videos(
     premium: Optional[str] = None,
     limit: int = Query(50, le=200),
     skip: int = Query(0, ge=0),
-    user=Depends(get_current_user),
+    user=Depends(require_premium),
 ):
     from server import db
     q: dict = {}
@@ -128,7 +128,7 @@ async def leaderboard(
     class_level: Optional[str] = None,
     test_id: Optional[str] = None,
     limit: int = Query(50, le=200),
-    user=Depends(get_current_user),
+    user=Depends(require_premium),
 ):
     from server import db
     from bson import ObjectId

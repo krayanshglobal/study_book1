@@ -28,6 +28,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   bool _obscure = true;
+  bool _otpSheetOpen = false;
   late final AnimationController _fadeCtrl;
   late final Animation<double> _fadeIn;
 
@@ -59,7 +60,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     if (!mounted) return;
     if (ok) {
       final user = ref.read(authProvider).user!;
-      debugPrint('[LOGIN DIAGNOSTICS] Login success for user: ${user.email}, role: ${user.role}');
+      debugPrint(
+          '[LOGIN DIAGNOSTICS] Login success for user: ${user.email}, role: ${user.role}');
       context.go(user.isAdmin ? '/admin' : '/dashboard');
     } else {
       final err = ref.read(authProvider).error ?? 'Invalid email or password';
@@ -86,8 +88,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
       final token = auth.idToken ?? auth.accessToken;
 
       if (token == null || token.isEmpty) {
-        debugPrint('Google Sign-In Warning: Both idToken and accessToken are null.');
-        if (mounted) showToast(context, 'Failed to obtain Google authentication token', isError: true);
+        debugPrint(
+            'Google Sign-In Warning: Both idToken and accessToken are null.');
+        if (mounted) {
+          showToast(context, 'Failed to obtain Google authentication token',
+              isError: true);
+        }
         return;
       }
 
@@ -95,42 +101,57 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
       if (!mounted) return;
       if (ok) {
         final user = ref.read(authProvider).user!;
-        debugPrint('[LOGIN DIAGNOSTICS] Google login success for user: ${user.email}, role: ${user.role}');
+        debugPrint(
+            '[LOGIN DIAGNOSTICS] Google login success for user: ${user.email}, role: ${user.role}');
         context.go(user.isAdmin ? '/admin' : '/dashboard');
       } else {
-        final err = ref.read(authProvider).error ?? 'Google authentication failed';
+        final err =
+            ref.read(authProvider).error ?? 'Google authentication failed';
         showToast(context, err, isError: true);
       }
     } catch (e, stack) {
       debugPrint('Google Sign-In Technical Exception: $e\n$stack');
       if (!mounted) return;
 
-      String userMsg = 'Google sign-in is currently unavailable. Please try again.';
+      String userMsg =
+          'Google sign-in is currently unavailable. Please try again.';
       final str = e.toString().toLowerCase();
-      if (str.contains('canceled') || str.contains('cancelled') || str.contains('12501')) {
+      if (str.contains('canceled') ||
+          str.contains('cancelled') ||
+          str.contains('12501')) {
         userMsg = 'Google sign-in was cancelled.';
-      } else if (str.contains('api_exception: 10') || str.contains('developer_error')) {
-        userMsg = 'Google sign-in configuration error. Ensure app SHA-1 fingerprint is registered.';
-      } else if (str.contains('network_error') || str.contains('socketexception')) {
-        userMsg = 'Unable to connect to Google services. Check internet connection.';
+      } else if (str.contains('api_exception: 10') ||
+          str.contains('developer_error')) {
+        userMsg =
+            'Google sign-in configuration error. Ensure app SHA-1 fingerprint is registered.';
+      } else if (str.contains('network_error') ||
+          str.contains('socketexception')) {
+        userMsg =
+            'Unable to connect to Google services. Check internet connection.';
       }
       showToast(context, userMsg, isError: true);
     }
   }
 
-  void _openMobileOtpModal() {
-    showModalBottomSheet(
+  Future<void> _openMobileOtpModal() async {
+    if (_otpSheetOpen) return;
+    setState(() => _otpSheetOpen = true);
+    await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => _MobileOtpSheet(
         onSuccess: (user) {
           Navigator.pop(ctx);
-          debugPrint('[LOGIN DIAGNOSTICS] OTP login success for user: ${user.email}, role: ${user.role}');
+          debugPrint(
+              '[LOGIN DIAGNOSTICS] OTP login success for user: ${user.email}, role: ${user.role}');
           context.go(user.isAdmin ? '/admin' : '/dashboard');
         },
       ),
     );
+    ref.read(authProvider.notifier).cancelMobileOtpFlow();
+    if (mounted) setState(() => _otpSheetOpen = false);
   }
 
   @override
@@ -165,7 +186,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                 opacity: _fadeIn,
                 child: Center(
                   child: SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 32),
                     child: ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 420),
                       child: Form(
@@ -198,11 +220,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
 
                             // ── QUICK AUTH BUTTONS (GOOGLE & MOBILE OTP) ──
                             OutlinedButton(
-                              onPressed: state.isLoading ? null : _handleGoogleSignIn,
+                              onPressed:
+                                  state.isLoading ? null : _handleGoogleSignIn,
                               style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 14),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                                side: const BorderSide(color: AppColors.slate200),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16)),
+                                side:
+                                    const BorderSide(color: AppColors.slate200),
                                 backgroundColor: AppColors.white,
                               ),
                               child: Row(
@@ -211,32 +237,50 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                                   Container(
                                     width: 20,
                                     height: 20,
-                                    decoration: const BoxDecoration(shape: BoxShape.circle),
+                                    decoration: const BoxDecoration(
+                                        shape: BoxShape.circle),
                                     child: Center(
-                                      child: Text('G', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w800, color: const Color(0xFF4285F4))),
+                                      child: Text('G',
+                                          style: GoogleFonts.inter(
+                                              fontSize: 15,
+                                              fontWeight: FontWeight.w800,
+                                              color: const Color(0xFF4285F4))),
                                     ),
                                   ),
                                   const SizedBox(width: 10),
-                                  Text('Continue with Google', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.navy)),
+                                  Text('Continue with Google',
+                                      style: GoogleFonts.inter(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w600,
+                                          color: AppColors.navy)),
                                 ],
                               ),
                             ),
                             const SizedBox(height: 10),
 
                             OutlinedButton(
-                              onPressed: state.isLoading ? null : _openMobileOtpModal,
+                              onPressed:
+                                  _otpSheetOpen ? null : _openMobileOtpModal,
                               style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 14),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                                side: const BorderSide(color: AppColors.slate200),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16)),
+                                side:
+                                    const BorderSide(color: AppColors.slate200),
                                 backgroundColor: AppColors.white,
                               ),
                               child: Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  const Icon(Icons.phone_iphone_rounded, size: 18, color: AppColors.violet),
+                                  const Icon(Icons.phone_iphone_rounded,
+                                      size: 18, color: AppColors.violet),
                                   const SizedBox(width: 10),
-                                  Text('Login with Mobile OTP', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.navy)),
+                                  Text('Login with Mobile OTP',
+                                      style: GoogleFonts.inter(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w600,
+                                          color: AppColors.navy)),
                                 ],
                               ),
                             ),
@@ -245,12 +289,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
 
                             Row(
                               children: [
-                                const Expanded(child: Divider(color: AppColors.slate200)),
+                                const Expanded(
+                                    child: Divider(color: AppColors.slate200)),
                                 Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                                  child: Text('OR', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.slate400)),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 12),
+                                  child: Text('OR',
+                                      style: GoogleFonts.inter(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w700,
+                                          color: AppColors.slate400)),
                                 ),
-                                const Expanded(child: Divider(color: AppColors.slate200)),
+                                const Expanded(
+                                    child: Divider(color: AppColors.slate200)),
                               ],
                             ),
 
@@ -281,7 +332,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                                     keyboardType: TextInputType.emailAddress,
                                     prefixIcon: Icons.mail_outline_rounded,
                                     validator: (v) {
-                                      if (v == null || v.isEmpty || !v.contains('@')) {
+                                      if (v == null ||
+                                          v.isEmpty ||
+                                          !v.contains('@')) {
                                         return 'Enter a valid email address';
                                       }
                                       return null;
@@ -296,11 +349,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                                     prefixIcon: Icons.lock_outline_rounded,
                                     suffixIcon: IconButton(
                                       icon: Icon(
-                                        _obscure ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                                        _obscure
+                                            ? Icons.visibility_off_outlined
+                                            : Icons.visibility_outlined,
                                         color: AppColors.slate400,
                                         size: 20,
                                       ),
-                                      onPressed: () => setState(() => _obscure = !_obscure),
+                                      onPressed: () =>
+                                          setState(() => _obscure = !_obscure),
                                     ),
                                     validator: (v) {
                                       if (v == null || v.length < 6) {
@@ -313,10 +369,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                                   Align(
                                     alignment: Alignment.centerRight,
                                     child: TextButton(
-                                      onPressed: () => context.push('/forgot-password'),
+                                      onPressed: () =>
+                                          context.push('/forgot-password'),
                                       style: TextButton.styleFrom(
                                         padding: EdgeInsets.zero,
-                                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                        tapTargetSize:
+                                            MaterialTapTargetSize.shrinkWrap,
                                       ),
                                       child: Text(
                                         'Forgot password?',
@@ -345,7 +403,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                               children: [
                                 Text(
                                   "Don't have an account? ",
-                                  style: GoogleFonts.inter(color: AppColors.slate500, fontSize: 14),
+                                  style: GoogleFonts.inter(
+                                      color: AppColors.slate500, fontSize: 14),
                                 ),
                                 GestureDetector(
                                   onTap: () => context.push('/register'),
@@ -389,11 +448,13 @@ class _MobileOtpSheetState extends ConsumerState<_MobileOtpSheet> {
   final _phoneCtrl = TextEditingController();
   final _otpCtrl = TextEditingController();
   final _nameCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
   String _classLevel = '10';
 
   bool _sending = false;
   bool _verifying = false;
   bool _userExists = false;
+  bool _automaticallyVerified = false;
 
   Timer? _timer;
   int _countdown = 30;
@@ -404,6 +465,7 @@ class _MobileOtpSheetState extends ConsumerState<_MobileOtpSheet> {
     _phoneCtrl.dispose();
     _otpCtrl.dispose();
     _nameCtrl.dispose();
+    _emailCtrl.dispose();
     super.dispose();
   }
 
@@ -420,9 +482,11 @@ class _MobileOtpSheetState extends ConsumerState<_MobileOtpSheet> {
   }
 
   Future<void> _sendOtp() async {
+    if (_sending) return;
     final rawPhone = _phoneCtrl.text.trim();
     final digits = rawPhone.replaceAll(RegExp(r'\D'), '');
-    if (digits.length < 10) {
+    if (digits.length != 10 &&
+        !(digits.length == 12 && digits.startsWith('91'))) {
       showToast(context, 'Enter a valid 10-digit mobile number', isError: true);
       return;
     }
@@ -436,7 +500,10 @@ class _MobileOtpSheetState extends ConsumerState<_MobileOtpSheet> {
       final devOtp = res['dev_otp']?.toString();
       setState(() {
         _step = 2;
+        // If account lookup times out, showing the optional profile fields is
+        // harmless for an existing user and avoids skipping them for a new one.
         _userExists = res['exists'] == true;
+        _automaticallyVerified = res['auto_verified'] == true;
         if (devOtp != null && devOtp.length == 6) {
           _otpCtrl.text = devOtp;
         }
@@ -444,7 +511,11 @@ class _MobileOtpSheetState extends ConsumerState<_MobileOtpSheet> {
       _startTimer();
       showToast(
         context,
-        devOtp == null ? 'OTP sent successfully!' : 'Development OTP: $devOtp',
+        _automaticallyVerified
+            ? 'Phone verified automatically. Tap Continue to sign in.'
+            : (devOtp == null
+                ? 'OTP sent successfully!'
+                : 'Development OTP: $devOtp'),
       );
     } else {
       final err = ref.read(authProvider).error ?? 'Failed to send OTP';
@@ -453,9 +524,18 @@ class _MobileOtpSheetState extends ConsumerState<_MobileOtpSheet> {
   }
 
   Future<void> _verifyOtp() async {
+    if (_verifying) return;
     final otp = _otpCtrl.text.trim();
-    if (otp.length != 6) {
+    if (!_automaticallyVerified && otp.length != 6) {
       showToast(context, 'Enter 6-digit OTP code', isError: true);
+      return;
+    }
+    final email = _emailCtrl.text.trim();
+    if (!_userExists &&
+        email.isNotEmpty &&
+        !RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(email)) {
+      showToast(context, 'Enter a valid email address or leave it blank',
+          isError: true);
       return;
     }
 
@@ -464,6 +544,7 @@ class _MobileOtpSheetState extends ConsumerState<_MobileOtpSheet> {
           phone: _phoneCtrl.text.trim(),
           otp: otp,
           name: _nameCtrl.text.trim(),
+          email: email,
           classLevel: _classLevel,
         );
     if (!mounted) return;
@@ -480,124 +561,154 @@ class _MobileOtpSheetState extends ConsumerState<_MobileOtpSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      padding: EdgeInsets.only(
-        left: 24,
-        right: 24,
-        top: 24,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return SafeArea(
+      top: false,
+      child: SingleChildScrollView(
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: Container(
+          decoration: const BoxDecoration(
+            color: AppColors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                _step == 1 ? 'Login with Mobile OTP' : 'Verify Mobile OTP',
-                style: GoogleFonts.fraunces(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.navy,
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    _step == 1 ? 'Login with Mobile OTP' : 'Verify Mobile OTP',
+                    style: GoogleFonts.fraunces(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.navy,
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded,
+                        color: AppColors.slate400),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              if (_step == 1) ...[
+                Text(
+                  'Enter your 10-digit mobile number to receive a verification OTP.',
+                  style: GoogleFonts.inter(
+                      fontSize: 13, color: AppColors.slate500),
                 ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.close_rounded, color: AppColors.slate400),
-                onPressed: () => Navigator.pop(context),
-              ),
+                const SizedBox(height: 16),
+                CustomTextField(
+                  label: 'Mobile Number',
+                  hint: '9876543210',
+                  controller: _phoneCtrl,
+                  keyboardType: TextInputType.phone,
+                  prefixIcon: Icons.phone_android_rounded,
+                ),
+                const SizedBox(height: 20),
+                CustomButton(
+                  text: 'Send Verification OTP',
+                  isLoading: _sending,
+                  onPressed: _sendOtp,
+                ),
+              ] else ...[
+                Text(
+                  _automaticallyVerified
+                      ? 'Firebase verified this phone automatically. Continue to finish signing in.'
+                      : 'Enter the 6-digit OTP code sent to ${_phoneCtrl.text.trim()}.',
+                  style: GoogleFonts.inter(
+                      fontSize: 13, color: AppColors.slate500),
+                ),
+                const SizedBox(height: 16),
+                if (!_automaticallyVerified)
+                  CustomTextField(
+                    label: 'Enter 6-Digit OTP',
+                    hint: '123456',
+                    controller: _otpCtrl,
+                    keyboardType: TextInputType.number,
+                    prefixIcon: Icons.pin_outlined,
+                  ),
+                if (!_userExists) ...[
+                  const SizedBox(height: 14),
+                  CustomTextField(
+                    label: 'Your Name (New Student)',
+                    hint: 'Full Name',
+                    controller: _nameCtrl,
+                    prefixIcon: Icons.person_outline_rounded,
+                  ),
+                  const SizedBox(height: 14),
+                  CustomTextField(
+                    label: 'Email Address (Optional)',
+                    hint: 'you@example.com',
+                    controller: _emailCtrl,
+                    keyboardType: TextInputType.emailAddress,
+                    prefixIcon: Icons.mail_outline_rounded,
+                  ),
+                  const SizedBox(height: 14),
+                  Text('Class Level',
+                      style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.slate600)),
+                  const SizedBox(height: 6),
+                  DropdownButtonFormField<String>(
+                    initialValue: _classLevel,
+                    decoration: InputDecoration(
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 12),
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                      enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide:
+                              const BorderSide(color: AppColors.slate200)),
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: '8', child: Text('Class 8')),
+                      DropdownMenuItem(value: '9', child: Text('Class 9')),
+                      DropdownMenuItem(value: '10', child: Text('Class 10')),
+                    ],
+                    onChanged: (v) => setState(() => _classLevel = v ?? '10'),
+                  ),
+                ],
+                const SizedBox(height: 20),
+                CustomButton(
+                  text: _automaticallyVerified
+                      ? 'Continue & Login'
+                      : 'Verify OTP & Login',
+                  isLoading: _verifying,
+                  onPressed: _verifyOtp,
+                ),
+                const SizedBox(height: 12),
+                if (!_automaticallyVerified)
+                  Center(
+                    child: _countdown > 0
+                        ? Text(
+                            'Resend OTP in ${_countdown}s',
+                            style: GoogleFonts.inter(
+                                fontSize: 12,
+                                color: AppColors.slate400,
+                                fontWeight: FontWeight.w600),
+                          )
+                        : TextButton(
+                            onPressed: _sendOtp,
+                            child: Text('Resend OTP',
+                                style: GoogleFonts.inter(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.blue)),
+                          ),
+                  ),
+              ],
             ],
           ),
-          const SizedBox(height: 16),
-
-          if (_step == 1) ...[
-            Text(
-              'Enter your 10-digit mobile number to receive a verification OTP.',
-              style: GoogleFonts.inter(fontSize: 13, color: AppColors.slate500),
-            ),
-            const SizedBox(height: 16),
-            CustomTextField(
-              label: 'Mobile Number',
-              hint: '9876543210',
-              controller: _phoneCtrl,
-              keyboardType: TextInputType.phone,
-              prefixIcon: Icons.phone_android_rounded,
-            ),
-            const SizedBox(height: 20),
-            CustomButton(
-              text: 'Send Verification OTP',
-              isLoading: _sending,
-              onPressed: _sendOtp,
-            ),
-          ] else ...[
-            Text(
-              'Enter the 6-digit OTP code sent to ${_phoneCtrl.text.trim()}.',
-              style: GoogleFonts.inter(fontSize: 13, color: AppColors.slate500),
-            ),
-            const SizedBox(height: 16),
-
-            CustomTextField(
-              label: 'Enter 6-Digit OTP',
-              hint: '123456',
-              controller: _otpCtrl,
-              keyboardType: TextInputType.number,
-              prefixIcon: Icons.pin_outlined,
-            ),
-
-            if (!_userExists) ...[
-              const SizedBox(height: 14),
-              CustomTextField(
-                label: 'Your Name (New Student)',
-                hint: 'Full Name',
-                controller: _nameCtrl,
-                prefixIcon: Icons.person_outline_rounded,
-              ),
-              const SizedBox(height: 14),
-              Text('Class Level', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.slate600)),
-              const SizedBox(height: 6),
-              DropdownButtonFormField<String>(
-                initialValue: _classLevel,
-                decoration: InputDecoration(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.slate200)),
-                ),
-                items: const [
-                  DropdownMenuItem(value: '8', child: Text('Class 8')),
-                  DropdownMenuItem(value: '9', child: Text('Class 9')),
-                  DropdownMenuItem(value: '10', child: Text('Class 10')),
-                ],
-                onChanged: (v) => setState(() => _classLevel = v ?? '10'),
-              ),
-            ],
-
-            const SizedBox(height: 20),
-
-            CustomButton(
-              text: 'Verify OTP & Login',
-              isLoading: _verifying,
-              onPressed: _verifyOtp,
-            ),
-
-            const SizedBox(height: 12),
-
-            Center(
-              child: _countdown > 0
-                  ? Text(
-                      'Resend OTP in ${_countdown}s',
-                      style: GoogleFonts.inter(fontSize: 12, color: AppColors.slate400, fontWeight: FontWeight.w600),
-                    )
-                  : TextButton(
-                      onPressed: _sendOtp,
-                      child: Text('Resend OTP', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.blue)),
-                    ),
-            ),
-          ],
-        ],
+        ),
       ),
     );
   }

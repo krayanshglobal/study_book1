@@ -23,6 +23,8 @@ class _PricingScreenState extends ConsumerState<PricingScreen> {
   bool _loading = true;
   String? _subscribingId;
   String? _pendingOrderId;
+  String? _paymentStatusMessage;
+  bool _paymentStatusIsError = false;
   late final Razorpay _razorpay;
 
   @override
@@ -59,7 +61,11 @@ class _PricingScreenState extends ConsumerState<PricingScreen> {
   }
 
   Future<void> _subscribe(Map plan) async {
-    setState(() => _subscribingId = plan['_id']);
+    setState(() {
+      _subscribingId = plan['_id'];
+      _paymentStatusMessage = null;
+      _paymentStatusIsError = false;
+    });
     try {
       final r = await dioClient.post(ApiEndpoints.checkout, data: {
         'plan_id': plan['_id'],
@@ -108,7 +114,17 @@ class _PricingScreenState extends ConsumerState<PricingScreen> {
   }
 
   void _handlePaymentError(PaymentFailureResponse response) {
-    _finishWithError(response.message ?? 'Payment was cancelled or failed.');
+    if (response.code == Razorpay.PAYMENT_CANCELLED) {
+      _finishPaymentStatus(
+        'Payment cancelled. No payment was made and no amount was charged.',
+        isError: false,
+      );
+      return;
+    }
+    final message = response.code == Razorpay.NETWORK_ERROR
+        ? 'Payment could not continue because of a network problem. Please try again.'
+        : (response.message ?? 'Payment failed. Please try again.');
+    _finishPaymentStatus(message, isError: true);
   }
 
   void _handleExternalWallet(ExternalWalletResponse response) {
@@ -119,12 +135,18 @@ class _PricingScreenState extends ConsumerState<PricingScreen> {
   }
 
   void _finishWithError(String message) {
+    _finishPaymentStatus(message, isError: true);
+  }
+
+  void _finishPaymentStatus(String message, {required bool isError}) {
     if (!mounted) return;
     setState(() {
       _subscribingId = null;
       _pendingOrderId = null;
+      _paymentStatusMessage = message;
+      _paymentStatusIsError = isError;
     });
-    showToast(context, message, isError: true);
+    showToast(context, message, isError: isError);
   }
 
   @override
@@ -159,6 +181,52 @@ class _PricingScreenState extends ConsumerState<PricingScreen> {
                       'Your admin sets what\'s free and what\'s premium. Upgrade anytime.',
                       style: GoogleFonts.inter(
                           fontSize: 13, color: AppColors.slate500)),
+                  if (_paymentStatusMessage != null) ...[
+                    const SizedBox(height: 14),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: (_paymentStatusIsError
+                                ? AppColors.error
+                                : AppColors.success)
+                            .withAlpha(18),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: (_paymentStatusIsError
+                                  ? AppColors.error
+                                  : AppColors.success)
+                              .withAlpha(55),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            _paymentStatusIsError
+                                ? Icons.error_outline_rounded
+                                : Icons.info_outline_rounded,
+                            size: 18,
+                            color: _paymentStatusIsError
+                                ? AppColors.error
+                                : AppColors.success,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _paymentStatusMessage!,
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: _paymentStatusIsError
+                                    ? AppColors.error
+                                    : AppColors.success,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 16),
                   if (user?.subscriptionActive == true) ...[
                     Container(

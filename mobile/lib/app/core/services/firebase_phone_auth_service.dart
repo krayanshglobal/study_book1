@@ -10,6 +10,9 @@ class FirebasePhoneAuthService {
   String? _verificationId;
   int? _resendToken;
   ConfirmationResult? _webConfirmation;
+  String? _automaticIdToken;
+  String? _lastPhone;
+  int _requestGeneration = 0;
 
   FirebaseAuth get _auth {
     if (Firebase.apps.isEmpty) {
@@ -28,41 +31,80 @@ class FirebasePhoneAuthService {
     throw const FormatException('Enter a valid 10-digit Indian mobile number');
   }
 
-  Future<void> sendOtp(String rawPhone) async {
+  /// Returns true when Android completed phone verification automatically.
+  Future<bool> sendOtp(String rawPhone) async {
     final phone = normalizeIndianPhone(rawPhone);
+    final generation = ++_requestGeneration;
+    if (_lastPhone != phone) {
+      _resendToken = null;
+      _lastPhone = phone;
+    }
     _verificationId = null;
     _webConfirmation = null;
+    _automaticIdToken = null;
 
     if (kIsWeb) {
       _webConfirmation = await _auth.signInWithPhoneNumber(phone);
-      return;
+      return false;
     }
 
-    final sent = Completer<void>();
+    final sent = Completer<bool>();
     await _auth.verifyPhoneNumber(
       phoneNumber: phone,
       forceResendingToken: _resendToken,
       timeout: const Duration(seconds: 60),
-      verificationCompleted: (_) {
-        // Keep the same explicit six-digit-code UX on every platform. Android
-        // may still suggest/autofill the received code at the keyboard level.
+      verificationCompleted: (phoneCredential) async {
+        if (generation != _requestGeneration) return;
+        try {
+          final credential = await _auth.signInWithCredential(phoneCredential);
+          final token = await credential.user?.getIdToken(true);
+          if (generation != _requestGeneration) return;
+          if (token != null && token.isNotEmpty) {
+            _automaticIdToken = token;
+            if (!sent.isCompleted) sent.complete(true);
+          } else if (!sent.isCompleted) {
+            sent.completeError(
+              StateError('Firebase did not return an authentication token.'),
+            );
+          }
+        } catch (error, stackTrace) {
+          if (!sent.isCompleted) sent.completeError(error, stackTrace);
+        } finally {
+          try {
+            await _auth.signOut();
+          } catch (_) {}
+        }
       },
       verificationFailed: (error) {
+        if (generation != _requestGeneration) return;
         if (!sent.isCompleted) sent.completeError(error);
       },
       codeSent: (verificationId, resendToken) {
+        if (generation != _requestGeneration) return;
         _verificationId = verificationId;
         _resendToken = resendToken;
-        if (!sent.isCompleted) sent.complete();
+        if (!sent.isCompleted) sent.complete(false);
       },
       codeAutoRetrievalTimeout: (verificationId) {
+        if (generation != _requestGeneration) return;
         _verificationId ??= verificationId;
       },
     );
-    await sent.future.timeout(const Duration(seconds: 90));
+    return sent.future.timeout(
+      const Duration(seconds: 90),
+      onTimeout: () => throw TimeoutException(
+        'Phone verification timed out. Check the network and request a new OTP.',
+      ),
+    );
   }
 
   Future<String> verifyOtp(String smsCode) async {
+    final automaticToken = _automaticIdToken;
+    if (automaticToken != null && automaticToken.isNotEmpty) {
+      _automaticIdToken = null;
+      return automaticToken;
+    }
+
     final UserCredential credential;
     if (kIsWeb) {
       final confirmation = _webConfirmation;

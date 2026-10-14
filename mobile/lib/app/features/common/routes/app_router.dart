@@ -96,7 +96,18 @@ final routerProvider = Provider<GoRouter>((ref) {
       final bool loggedIn = authState.user != null;
       final String loc = state.matchedLocation;
 
-      final bool isPublic = loc == '/' || loc == '/landing' || loc == '/login' || loc == '/register' || loc == '/forgot-password';
+      final bool isPublic = loc == '/' ||
+          loc == '/landing' ||
+          loc == '/login' ||
+          loc == '/register' ||
+          loc == '/forgot-password';
+      final bool isPremiumSection = loc == '/explorer' ||
+          loc == '/questions' ||
+          loc == '/tests' ||
+          loc == '/videos' ||
+          loc == '/leaderboard' ||
+          loc == '/my-analytics' ||
+          loc.startsWith('/tests/');
 
       if (loggedIn) {
         if (loc != '/' && isPublic) {
@@ -111,6 +122,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         if (loc == '/superadmin' && !authState.user!.isSuperAdmin) {
           return authState.user!.isAdmin ? '/admin' : '/dashboard';
         }
+        if (!authState.user!.isAdmin &&
+            !authState.user!.subscriptionActive &&
+            isPremiumSection) {
+          return '/pricing';
+        }
         return null;
       } else {
         if (!isPublic) {
@@ -121,13 +137,34 @@ final routerProvider = Provider<GoRouter>((ref) {
     },
     routes: [
       // Public / Splash
-      GoRoute(path: '/', pageBuilder: (context, state) => _buildFadeSlidePage(state: state, child: const SplashScreen())),
-      GoRoute(path: '/landing', pageBuilder: (context, state) => _buildFadeSlidePage(state: state, child: const LandingScreen())),
-      GoRoute(path: '/login', pageBuilder: (context, state) => _buildFadeSlidePage(state: state, child: const LoginScreen())),
-      GoRoute(path: '/register', pageBuilder: (context, state) => _buildFadeSlidePage(state: state, child: const RegisterScreen())),
-      GoRoute(path: '/forgot-password', pageBuilder: (context, state) => _buildFadeSlidePage(state: state, child: const ForgotPasswordScreen())),
-      GoRoute(path: '/change-password', pageBuilder: (context, state) => _buildFadeSlidePage(state: state, child: const ChangePasswordScreen())),
-      GoRoute(path: '/notifications', pageBuilder: (context, state) => _buildFadeSlidePage(state: state, child: const NotificationsScreen())),
+      GoRoute(
+          path: '/',
+          pageBuilder: (context, state) =>
+              _buildFadeSlidePage(state: state, child: const SplashScreen())),
+      GoRoute(
+          path: '/landing',
+          pageBuilder: (context, state) =>
+              _buildFadeSlidePage(state: state, child: const LandingScreen())),
+      GoRoute(
+          path: '/login',
+          pageBuilder: (context, state) =>
+              _buildFadeSlidePage(state: state, child: const LoginScreen())),
+      GoRoute(
+          path: '/register',
+          pageBuilder: (context, state) =>
+              _buildFadeSlidePage(state: state, child: const RegisterScreen())),
+      GoRoute(
+          path: '/forgot-password',
+          pageBuilder: (context, state) => _buildFadeSlidePage(
+              state: state, child: const ForgotPasswordScreen())),
+      GoRoute(
+          path: '/change-password',
+          pageBuilder: (context, state) => _buildFadeSlidePage(
+              state: state, child: const ChangePasswordScreen())),
+      GoRoute(
+          path: '/notifications',
+          pageBuilder: (context, state) => _buildFadeSlidePage(
+              state: state, child: const NotificationsScreen())),
 
       // Full screen student pages
       GoRoute(
@@ -244,21 +281,66 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
 
       // Admin & SuperAdmin
-      GoRoute(path: '/admin', pageBuilder: (context, state) => _buildFadeSlidePage(state: state, child: const AdminDashboardScreen())),
-      GoRoute(path: '/admin/questions', pageBuilder: (context, state) => _buildFadeSlidePage(state: state, child: const ManageQuestionsScreen())),
-      GoRoute(path: '/admin/tests', pageBuilder: (context, state) => _buildFadeSlidePage(state: state, child: const ManageTestsScreen())),
-      GoRoute(path: '/admin/videos', pageBuilder: (context, state) => _buildFadeSlidePage(state: state, child: const ManageVideosScreen())),
-      GoRoute(path: '/admin/notes', pageBuilder: (context, state) => _buildFadeSlidePage(state: state, child: const ManageNotesScreen())),
-      GoRoute(path: '/admin/promos', pageBuilder: (context, state) => _buildFadeSlidePage(state: state, child: const ManagePromosScreen())),
-      GoRoute(path: '/admin/class-requests', pageBuilder: (context, state) => _buildFadeSlidePage(state: state, child: const ManageClassRequestsScreen())),
-      GoRoute(path: '/admin/flashcards', pageBuilder: (context, state) => _buildFadeSlidePage(state: state, child: const ManageFlashcardsScreen())),
-      GoRoute(path: '/admin/users', pageBuilder: (context, state) => _buildFadeSlidePage(state: state, child: const ManageUsersScreen())),
-      GoRoute(path: '/admin/plans', pageBuilder: (context, state) => _buildFadeSlidePage(state: state, child: const ManagePlansScreen())),
-      GoRoute(path: '/admin/payments', pageBuilder: (context, state) => _buildFadeSlidePage(state: state, child: const ManagePaymentsScreen())),
-      GoRoute(path: '/admin/announcements', pageBuilder: (context, state) => _buildFadeSlidePage(state: state, child: const ManageAnnouncementsScreen())),
-      GoRoute(path: '/admin/analytics', pageBuilder: (context, state) => _buildFadeSlidePage(state: state, child: const AdminAnalyticsScreen())),
-      GoRoute(path: '/admin/leaderboard', pageBuilder: (context, state) => _buildFadeSlidePage(state: state, child: const LeaderboardScreen())),
-      GoRoute(path: '/superadmin', pageBuilder: (context, state) => _buildFadeSlidePage(state: state, child: const SuperAdminScreen())),
+      GoRoute(
+          path: '/admin',
+          pageBuilder: (context, state) => _buildFadeSlidePage(
+              state: state, child: const AdminDashboardScreen())),
+      GoRoute(
+          path: '/admin/questions',
+          pageBuilder: (context, state) => _buildFadeSlidePage(
+              state: state, child: const ManageQuestionsScreen())),
+      GoRoute(
+          path: '/admin/tests',
+          pageBuilder: (context, state) => _buildFadeSlidePage(
+              state: state, child: const ManageTestsScreen())),
+      GoRoute(
+          path: '/admin/videos',
+          pageBuilder: (context, state) => _buildFadeSlidePage(
+              state: state, child: const ManageVideosScreen())),
+      GoRoute(
+          path: '/admin/notes',
+          pageBuilder: (context, state) => _buildFadeSlidePage(
+              state: state, child: const ManageNotesScreen())),
+      GoRoute(
+          path: '/admin/promos',
+          pageBuilder: (context, state) => _buildFadeSlidePage(
+              state: state, child: const ManagePromosScreen())),
+      GoRoute(
+          path: '/admin/class-requests',
+          pageBuilder: (context, state) => _buildFadeSlidePage(
+              state: state, child: const ManageClassRequestsScreen())),
+      GoRoute(
+          path: '/admin/flashcards',
+          pageBuilder: (context, state) => _buildFadeSlidePage(
+              state: state, child: const ManageFlashcardsScreen())),
+      GoRoute(
+          path: '/admin/users',
+          pageBuilder: (context, state) => _buildFadeSlidePage(
+              state: state, child: const ManageUsersScreen())),
+      GoRoute(
+          path: '/admin/plans',
+          pageBuilder: (context, state) => _buildFadeSlidePage(
+              state: state, child: const ManagePlansScreen())),
+      GoRoute(
+          path: '/admin/payments',
+          pageBuilder: (context, state) => _buildFadeSlidePage(
+              state: state, child: const ManagePaymentsScreen())),
+      GoRoute(
+          path: '/admin/announcements',
+          pageBuilder: (context, state) => _buildFadeSlidePage(
+              state: state, child: const ManageAnnouncementsScreen())),
+      GoRoute(
+          path: '/admin/analytics',
+          pageBuilder: (context, state) => _buildFadeSlidePage(
+              state: state, child: const AdminAnalyticsScreen())),
+      GoRoute(
+          path: '/admin/leaderboard',
+          pageBuilder: (context, state) => _buildFadeSlidePage(
+              state: state, child: const LeaderboardScreen())),
+      GoRoute(
+          path: '/superadmin',
+          pageBuilder: (context, state) => _buildFadeSlidePage(
+              state: state, child: const SuperAdminScreen())),
     ],
   );
 });

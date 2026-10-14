@@ -72,6 +72,9 @@ def _serialize_user(u: dict, access_token: str = None, refresh_token: str = None
     u = dict(u)
     if "_id" in u:
         u["_id"] = str(u["_id"])
+    u["phone_auth"] = bool(u.get("firebase_uid")) or not bool(
+        u.get("password_hash")
+    )
     u.pop("password_hash", None)
     u["profile_picture"] = u.get("avatar_url", "")
     if access_token:
@@ -89,6 +92,25 @@ def _get_uid_str(user: dict) -> str:
 def _get_uid_oid(user: dict) -> ObjectId:
     """Return the user's _id as ObjectId (for MongoDB queries)."""
     return ObjectId(user["_id"])
+
+
+def _placeholder_email(phone: str) -> str:
+    """Internal unique email used only when a phone-auth user omits email."""
+    digits = "".join(c for c in str(phone) if c.isdigit())
+    return f"user_{digits[-10:]}@studybook.com"
+
+
+def _is_placeholder_email(email: str) -> bool:
+    value = str(email or "").strip().lower()
+    return value.startswith("user_") and value.endswith("@studybook.com")
+
+
+async def _ensure_email_available(db, email: str, exclude_user_id=None) -> None:
+    query = {"email": email}
+    if exclude_user_id is not None:
+        query["_id"] = {"$ne": exclude_user_id}
+    if await db.users.find_one(query):
+        raise HTTPException(status_code=400, detail="Email already registered")
 
 
 async def _generate_student_id(db, class_level: str) -> str:
@@ -220,13 +242,23 @@ async def login(body: LoginInput, request: Request, response: Response):
                 raise HTTPException(status_code=429, detail="Too many attempts. Try again in 15 minutes.")
 
     user = await db.users.find_one({"email": email})
-    if not user or not verify_password(body.password, user["password_hash"]):
+    password_matches = bool(user) and bool(user.get("password_hash")) and verify_password(
+        body.password, user["password_hash"]
+    )
+    if not password_matches:
         await db.login_attempts.update_one(
             {"identifier": identifier},
             {"$inc": {"count": 1}, "$set": {"last_attempt": now_iso()}},
             upsert=True,
         )
-        raise HTTPException(status_code=401, detail="Invalid email or password")
+        if not user:
+            raise HTTPException(status_code=401, detail="Email is not registered")
+        if not user.get("password_hash"):
+            raise HTTPException(
+                status_code=401,
+                detail="This account uses Mobile OTP. Please login with Mobile OTP.",
+            )
+        raise HTTPException(status_code=401, detail="Wrong password entered")
 
     await db.login_attempts.delete_one({"identifier": identifier})
 
@@ -573,7 +605,13 @@ async def firebase_mobile_auth(body: FirebasePhoneAuthInput, response: Response)
             if body.name and body.name.strip()
             else f"Student {normalized_phone[-4:]}"
         )
-        email = f"user_{normalized_phone}@studybook.com"
+        email = (
+            str(body.email).lower().strip()
+            if body.email
+            else _placeholder_email(normalized_phone)
+        )
+        if body.email:
+            await _ensure_email_available(db, email)
         user = {
             "name": name,
             "email": email,
@@ -671,7 +709,13 @@ async def mobile_verify_otp(body: MobileVerifyOtpInput, response: Response):
 
         student_id = await _generate_student_id(db, body.class_level or "10")
         name = body.name.strip() if (body.name and body.name.strip()) else f"Student {normalized_phone[-4:]}"
-        email = f"user_{normalized_phone}@studybook.com"
+        email = (
+            str(body.email).lower().strip()
+            if body.email
+            else _placeholder_email(normalized_phone)
+        )
+        if body.email:
+            await _ensure_email_available(db, email)
 
         doc = {
             "name": name,
@@ -875,14 +919,14 @@ async def update_profile(body: dict, user=Depends(get_current_user)):
 
     # BUG FIX: user["_id"] is already a string; use ObjectId() only for queries
     uid_oid = _get_uid_oid(user)
+    db_user = await db.users.find_one({"_id": uid_oid})
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found")
 
     up = {}
     if "class_level" in body:
         val = str(body["class_level"]).strip()
         if val in ["8", "9", "10"]:
-            db_user = await db.users.find_one({"_id": uid_oid})
-            if not db_user:
-                raise HTTPException(status_code=404, detail="User not found")
             if not db_user.get("class_level"):
                 up["class_level"] = val
             elif db_user.get("class_level") != val:
@@ -896,6 +940,29 @@ async def update_profile(body: dict, user=Depends(get_current_user)):
             up["name"] = name
     if "phone" in body:
         up["phone"] = body["phone"].strip()
+    if "email" in body:
+        raw_email = str(body.get("email") or "").strip().lower()
+        if raw_email:
+            email_err = validate_email_str(raw_email)
+            if email_err:
+                raise HTTPException(status_code=400, detail=email_err)
+            await _ensure_email_available(db, raw_email, exclude_user_id=uid_oid)
+            up["email"] = raw_email
+        else:
+            is_phone_auth = bool(db_user.get("firebase_uid")) or not bool(
+                db_user.get("password_hash")
+            )
+            if not is_phone_auth:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Email is required for password-based accounts",
+                )
+            # Mongo's unique email index requires a stable internal value even
+            # though email is optional for phone-auth students.
+            phone_for_placeholder = body.get("phone") or user.get("phone") or ""
+            placeholder = _placeholder_email(str(phone_for_placeholder))
+            await _ensure_email_available(db, placeholder, exclude_user_id=uid_oid)
+            up["email"] = placeholder
 
     if up:
         await db.users.update_one({"_id": uid_oid}, {"$set": up})

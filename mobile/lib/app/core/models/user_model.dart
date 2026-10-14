@@ -13,6 +13,7 @@ class UserModel {
   final String? subscriptionExpiresAt;
   final int totalPoints;
   final String? createdAt;
+  final bool phoneAuth;
 
   UserModel({
     required this.id,
@@ -29,6 +30,7 @@ class UserModel {
     this.subscriptionExpiresAt,
     this.totalPoints = 0,
     this.createdAt,
+    this.phoneAuth = false,
   });
 
   bool get isAdmin => role == 'admin' || role == 'superadmin';
@@ -43,13 +45,15 @@ class UserModel {
       role: json['role']?.toString() ?? 'student',
       classLevel: json['class_level']?.toString(),
       studentId: json['student_id']?.toString(),
-      avatarUrl: json['avatar_url']?.toString() ?? json['profile_picture']?.toString(),
+      avatarUrl:
+          json['avatar_url']?.toString() ?? json['profile_picture']?.toString(),
       referralCode: json['referral_code']?.toString(),
       referredBy: json['referred_by']?.toString(),
       subscriptionActive: json['subscription_active'] == true,
       subscriptionExpiresAt: json['subscription_expires_at']?.toString(),
       totalPoints: (json['total_points'] as num?)?.toInt() ?? 0,
       createdAt: json['created_at']?.toString(),
+      phoneAuth: json['phone_auth'] == true,
     );
   }
 
@@ -69,6 +73,7 @@ class UserModel {
       'subscription_expires_at': subscriptionExpiresAt,
       'total_points': totalPoints,
       'created_at': createdAt,
+      'phone_auth': phoneAuth,
     };
   }
 }

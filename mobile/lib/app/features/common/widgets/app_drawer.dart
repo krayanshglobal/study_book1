@@ -99,7 +99,6 @@ class AppDrawer extends ConsumerWidget {
                         ),
                       ],
                     ),
-
                   ],
                 ),
               ),
@@ -116,30 +115,36 @@ class AppDrawer extends ConsumerWidget {
                       icon: Icons.dashboard_rounded,
                       label: 'Dashboard',
                       route: '/dashboard'),
-                  const _NavItem(
+                  _NavItem(
                       icon: Icons.explore_rounded,
                       label: 'Study Explorer',
-                      route: '/explorer'),
-                  const _NavItem(
+                      route: '/explorer',
+                      locked: user?.subscriptionActive != true),
+                  _NavItem(
                       icon: Icons.quiz_rounded,
                       label: 'Question Bank',
-                      route: '/questions'),
-                  const _NavItem(
+                      route: '/questions',
+                      locked: user?.subscriptionActive != true),
+                  _NavItem(
                       icon: Icons.assignment_rounded,
                       label: 'Tests',
-                      route: '/tests'),
-                  const _NavItem(
+                      route: '/tests',
+                      locked: user?.subscriptionActive != true),
+                  _NavItem(
                       icon: Icons.play_circle_rounded,
                       label: 'Videos',
-                      route: '/videos'),
-                  const _NavItem(
+                      route: '/videos',
+                      locked: user?.subscriptionActive != true),
+                  _NavItem(
                       icon: Icons.leaderboard_rounded,
                       label: 'Leaderboard',
-                      route: '/leaderboard'),
-                  const _NavItem(
+                      route: '/leaderboard',
+                      locked: user?.subscriptionActive != true),
+                  _NavItem(
                       icon: Icons.bar_chart_rounded,
                       label: 'My Analytics',
-                      route: '/my-analytics'),
+                      route: '/my-analytics',
+                      locked: user?.subscriptionActive != true),
                   const _NavItem(
                       icon: Icons.share_rounded,
                       label: 'Referrals',
@@ -247,35 +252,35 @@ class _NavItem extends StatelessWidget {
   final IconData icon;
   final String label;
   final String route;
+  final bool locked;
 
   const _NavItem(
-      {required this.icon, required this.label, required this.route});
+      {required this.icon,
+      required this.label,
+      required this.route,
+      this.locked = false});
 
   @override
   Widget build(BuildContext context) {
     final location = GoRouterState.of(context).matchedLocation;
     final isActive = location == route ||
-        (route != '/' &&
-            route != '/admin' &&
-            location.startsWith('$route/'));
+        (route != '/' && route != '/admin' && location.startsWith('$route/'));
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 1),
       child: Material(
-        color: isActive
-            ? AppColors.blue.withAlpha(15)
-            : Colors.transparent,
+        color: isActive ? AppColors.blue.withAlpha(15) : Colors.transparent,
         borderRadius: BorderRadius.circular(12),
         child: InkWell(
           borderRadius: BorderRadius.circular(12),
           onTap: () {
             Navigator.of(context).pop();
-            if (location == route) return;
-            context.go(route);
+            final target = locked ? '/pricing' : route;
+            if (location == target) return;
+            context.go(target);
           },
           child: Padding(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
             child: Row(
               children: [
                 Container(
@@ -291,9 +296,7 @@ class _NavItem extends StatelessWidget {
                     child: Icon(
                       icon,
                       size: 18,
-                      color: isActive
-                          ? AppColors.blue
-                          : AppColors.slate500,
+                      color: isActive ? AppColors.blue : AppColors.slate500,
                     ),
                   ),
                 ),
@@ -303,15 +306,18 @@ class _NavItem extends StatelessWidget {
                     label,
                     style: GoogleFonts.inter(
                       fontSize: 14,
-                      fontWeight:
-                          isActive ? FontWeight.w600 : FontWeight.w400,
-                      color: isActive
-                          ? AppColors.navy
-                          : AppColors.slate700,
+                      fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
+                      color: isActive ? AppColors.navy : AppColors.slate700,
                     ),
                   ),
                 ),
-                if (isActive)
+                if (locked)
+                  const Icon(
+                    Icons.lock_rounded,
+                    size: 16,
+                    color: AppColors.violet,
+                  )
+                else if (isActive)
                   Container(
                     width: 6,
                     height: 6,
@@ -413,8 +419,8 @@ class _DrawerProfileCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 3),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                     decoration: BoxDecoration(
                       color: const Color(0xFF0F2A6D),
                       borderRadius: BorderRadius.circular(99),
@@ -579,9 +585,8 @@ class AppBottomNavBar extends ConsumerWidget {
                           curve: Curves.easeOutCubic,
                           style: GoogleFonts.inter(
                             fontSize: 11,
-                            fontWeight: isActive
-                                ? FontWeight.w700
-                                : FontWeight.w500,
+                            fontWeight:
+                                isActive ? FontWeight.w700 : FontWeight.w500,
                             color: isActive
                                 ? AppColors.blue
                                 : const Color(0xFF94A3B8), // Slate 400 grey
@@ -651,8 +656,7 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
       context.pop();
     } else {
       final user = ref.read(authProvider).user;
-      final defaultParent =
-          (user?.isAdmin ?? false) ? '/admin' : '/dashboard';
+      final defaultParent = (user?.isAdmin ?? false) ? '/admin' : '/dashboard';
       final targetParent =
           (widget.parentRoute == '/dashboard' && (user?.isAdmin ?? false))
               ? '/admin'
@@ -711,12 +715,10 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
             final defaultParent =
                 (user?.isAdmin ?? false) ? '/admin' : '/dashboard';
             final targetParent =
-                (widget.parentRoute == '/dashboard' &&
-                        (user?.isAdmin ?? false))
+                (widget.parentRoute == '/dashboard' && (user?.isAdmin ?? false))
                     ? '/admin'
                     : widget.parentRoute;
-            context.go(
-                targetParent.isNotEmpty ? targetParent : defaultParent);
+            context.go(targetParent.isNotEmpty ? targetParent : defaultParent);
           }
         }
       },
@@ -799,7 +801,8 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
                         top: 6,
                         right: 6,
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 4, vertical: 1),
                           decoration: BoxDecoration(
                             color: AppColors.error,
                             borderRadius: BorderRadius.circular(10),
@@ -828,8 +831,10 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
               padding: const EdgeInsets.only(right: 12),
               child: GestureDetector(
                 onTap: () {
-                  final location =
-                      GoRouterState.of(context).matchedLocation.split('?').first;
+                  final location = GoRouterState.of(context)
+                      .matchedLocation
+                      .split('?')
+                      .first;
                   if (location != '/profile') {
                     context.push('/profile');
                   }
@@ -871,4 +876,3 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
     );
   }
 }
-

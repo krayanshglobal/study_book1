@@ -8,7 +8,7 @@ from models import (
     NoteCreate, NoteUpdate, DiscussionThreadCreate, DiscussionReplyCreate,
     FlashcardCreate, FlashcardUpdate, PromoBannerCreate, PromoBannerUpdate, now_iso
 )
-from auth import get_current_user, require_role
+from auth import get_current_user, require_premium, require_role
 import logging
 
 logger = logging.getLogger(__name__)
@@ -39,7 +39,7 @@ async def list_notes(
     topic: Optional[str] = None,
     search: Optional[str] = None,
     premium: Optional[str] = None,
-    user=Depends(get_current_user)
+    user=Depends(require_premium)
 ):
     from server import db
     q: dict = {}
@@ -76,7 +76,7 @@ async def list_notes(
 
 
 @router.get("/api/notes/{nid}")
-async def get_note(nid: str, user=Depends(get_current_user)):
+async def get_note(nid: str, user=Depends(require_premium)):
     from server import db
     oid = _safe_oid(nid, "note ID")
     doc = await db.study_notes.find_one({"_id": oid})
@@ -132,7 +132,7 @@ async def list_discussions(
     class_level: Optional[str] = None,
     subject: Optional[str] = None,
     topic: Optional[str] = None,
-    _=Depends(get_current_user)
+    _=Depends(require_premium)
 ):
     from server import db
     q = {}
@@ -161,7 +161,7 @@ async def list_discussions(
 
 
 @router.get("/api/discussions/{tid}")
-async def get_discussion(tid: str, _=Depends(get_current_user)):
+async def get_discussion(tid: str, _=Depends(require_premium)):
     from server import db
     oid = _safe_oid(tid, "thread ID")
     doc = await db.discussion_threads.find_one({"_id": oid})
@@ -179,7 +179,7 @@ async def get_discussion(tid: str, _=Depends(get_current_user)):
 
 
 @router.post("/api/discussions")
-async def create_discussion(body: DiscussionThreadCreate, user=Depends(get_current_user)):
+async def create_discussion(body: DiscussionThreadCreate, user=Depends(require_premium)):
     from server import db
     doc = body.model_dump()
     doc["subject"] = doc["subject"].lower().strip()
@@ -195,7 +195,7 @@ async def create_discussion(body: DiscussionThreadCreate, user=Depends(get_curre
 
 
 @router.post("/api/discussions/{tid}/reply")
-async def reply_discussion(tid: str, body: DiscussionReplyCreate, user=Depends(get_current_user)):
+async def reply_discussion(tid: str, body: DiscussionReplyCreate, user=Depends(require_premium)):
     from server import db
     oid = _safe_oid(tid, "thread ID")
     thread = await db.discussion_threads.find_one({"_id": oid})
@@ -232,7 +232,7 @@ async def resolve_discussion(tid: str, user=Depends(require_role("admin", "super
 
 
 @router.delete("/api/discussions/{tid}")
-async def delete_discussion(tid: str, user=Depends(get_current_user)):
+async def delete_discussion(tid: str, user=Depends(require_premium)):
     from server import db
     oid = _safe_oid(tid, "thread ID")
     thread = await db.discussion_threads.find_one({"_id": oid})
@@ -247,7 +247,7 @@ async def delete_discussion(tid: str, user=Depends(get_current_user)):
 
 
 @router.delete("/api/discussions/{tid}/reply/{rid}")
-async def delete_reply(tid: str, rid: str, user=Depends(get_current_user)):
+async def delete_reply(tid: str, rid: str, user=Depends(require_premium)):
     from server import db
     oid = _safe_oid(tid, "thread ID")
     thread = await db.discussion_threads.find_one({"_id": oid})
@@ -287,7 +287,7 @@ async def list_flashcards(
     subject: Optional[str] = None,
     topic: Optional[str] = None,
     premium: Optional[str] = None,
-    user=Depends(get_current_user)
+    user=Depends(require_premium)
 ):
     from server import db
     q = {}

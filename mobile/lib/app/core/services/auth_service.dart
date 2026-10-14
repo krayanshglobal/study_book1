@@ -12,6 +12,18 @@ import 'firebase_phone_auth_service.dart';
 class AuthService {
   final FirebasePhoneAuthService _firebasePhoneAuth =
       FirebasePhoneAuthService();
+
+  Future<Map<String, dynamic>?> _loadMobileAccountStatus(String phone) async {
+    try {
+      final response = await dioClient.post(ApiEndpoints.mobileAccountStatus,
+          data: {'phone': phone}).timeout(const Duration(seconds: 10));
+      return Map<String, dynamic>.from(response.data as Map);
+    } catch (error) {
+      debugPrint('[OTP] Account-status lookup unavailable: $error');
+      return null;
+    }
+  }
+
   // Uses the global dioClient (cookie & bearer token enabled)
   Future<UserModel> getCurrentUser() async {
     final resp = await dioClient.get(ApiEndpoints.me);
@@ -34,8 +46,9 @@ class AuthService {
     final user = UserModel.fromJson(resp.data as Map<String, dynamic>);
     final accessToken = resp.data['access_token']?.toString();
     final refreshToken = resp.data['refresh_token']?.toString();
-    
-    debugPrint('[AUTH DIAGNOSTICS] Login success for user: ${user.email}, role: ${user.role}');
+
+    debugPrint(
+        '[AUTH DIAGNOSTICS] Login success for user: ${user.email}, role: ${user.role}');
     await StorageService.saveSession(
       user: user,
       accessToken: accessToken,
@@ -60,7 +73,8 @@ class AuthService {
     final accessToken = resp.data['access_token']?.toString();
     final refreshToken = resp.data['refresh_token']?.toString();
 
-    debugPrint('[AUTH DIAGNOSTICS] Google login success for user: ${user.email}, role: ${user.role}');
+    debugPrint(
+        '[AUTH DIAGNOSTICS] Google login success for user: ${user.email}, role: ${user.role}');
     await StorageService.saveSession(
       user: user,
       accessToken: accessToken,
@@ -70,16 +84,27 @@ class AuthService {
   }
 
   Future<Map<String, dynamic>> sendMobileOtp(String phone) async {
-    // Check the application backend before consuming an SMS request. Both
-    // login and registration require the backend after Firebase verifies the
-    // code, so continuing while it is unavailable would strand the user on
-    // the OTP screen.
-    final response = await dioClient.post(
-      ApiEndpoints.mobileAccountStatus,
-      data: {'phone': phone},
+    // Start the backend lookup and Firebase challenge together. A cold or
+    // temporarily slow backend must not prevent Firebase's OTP UI from
+    // advancing after codeSent/instant verification succeeds.
+    final accountStatusFuture = _loadMobileAccountStatus(phone);
+
+    final automaticallyVerified = await _firebasePhoneAuth.sendOtp(phone);
+    Map<String, dynamic> result = <String, dynamic>{
+      'ok': true,
+      'exists': null,
+      'account_status_unavailable': true,
+    };
+    final accountStatus = await accountStatusFuture.timeout(
+      const Duration(seconds: 2),
+      onTimeout: () => null,
     );
-    await _firebasePhoneAuth.sendOtp(phone);
-    return response.data as Map<String, dynamic>;
+    if (accountStatus != null) {
+      result = accountStatus;
+      result['account_status_unavailable'] = false;
+    }
+    result['auto_verified'] = automaticallyVerified;
+    return result;
   }
 
   Future<Map<String, dynamic>> verifyOtpForRegistration({
@@ -101,6 +126,7 @@ class AuthService {
     required String phone,
     required String otp,
     String? name,
+    String? email,
     String? classLevel,
     String? referralCode,
   }) async {
@@ -109,15 +135,22 @@ class AuthService {
       'id_token': idToken,
     };
     if (name != null && name.isNotEmpty) body['name'] = name;
-    if (classLevel != null && classLevel.isNotEmpty) body['class_level'] = classLevel;
-    if (referralCode != null && referralCode.isNotEmpty) body['referral_code'] = referralCode;
+    if (email != null && email.isNotEmpty) body['email'] = email;
+    if (classLevel != null && classLevel.isNotEmpty) {
+      body['class_level'] = classLevel;
+    }
+    if (referralCode != null && referralCode.isNotEmpty) {
+      body['referral_code'] = referralCode;
+    }
 
-    final resp = await dioClient.post(ApiEndpoints.firebasePhoneAuth, data: body);
+    final resp =
+        await dioClient.post(ApiEndpoints.firebasePhoneAuth, data: body);
     final user = UserModel.fromJson(resp.data as Map<String, dynamic>);
     final accessToken = resp.data['access_token']?.toString();
     final refreshToken = resp.data['refresh_token']?.toString();
 
-    debugPrint('[AUTH DIAGNOSTICS] Mobile OTP verify success for user: ${user.email}, role: ${user.role}');
+    debugPrint(
+        '[AUTH DIAGNOSTICS] Mobile OTP verify success for user: ${user.email}, role: ${user.role}');
     await StorageService.saveSession(
       user: user,
       accessToken: accessToken,
@@ -142,15 +175,20 @@ class AuthService {
       'password': password,
     };
     if (classLevel != null) body['class_level'] = classLevel;
-    if (referralCode != null && referralCode.isNotEmpty) body['referral_code'] = referralCode;
-    if (verificationToken != null && verificationToken.isNotEmpty) body['verification_token'] = verificationToken;
+    if (referralCode != null && referralCode.isNotEmpty) {
+      body['referral_code'] = referralCode;
+    }
+    if (verificationToken != null && verificationToken.isNotEmpty) {
+      body['verification_token'] = verificationToken;
+    }
 
     final resp = await dioClient.post(ApiEndpoints.register, data: body);
     final user = UserModel.fromJson(resp.data as Map<String, dynamic>);
     final accessToken = resp.data['access_token']?.toString();
     final refreshToken = resp.data['refresh_token']?.toString();
 
-    debugPrint('[AUTH DIAGNOSTICS] Registration success for user: ${user.email}, role: ${user.role}');
+    debugPrint(
+        '[AUTH DIAGNOSTICS] Registration success for user: ${user.email}, role: ${user.role}');
     await StorageService.saveSession(
       user: user,
       accessToken: accessToken,
@@ -185,6 +223,14 @@ class AuthService {
           return 'The OTP service quota has been reached. Please try later.';
         case 'session-expired':
           return 'The OTP has expired. Please request a new code.';
+        case 'network-request-failed':
+          return 'Phone verification could not reach Firebase. Check internet access and try again.';
+        case 'app-not-authorized':
+        case 'operation-not-allowed':
+          return 'Phone login is not enabled for this app. Contact the administrator.';
+        case 'invalid-app-credential':
+        case 'missing-client-identifier':
+          return 'This app build is not authorized for phone login. Update the app or contact support.';
         case 'web-context-cancelled':
           return 'Phone verification was cancelled.';
         default:

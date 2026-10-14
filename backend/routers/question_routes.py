@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Depends, Query, UploadFile, File
 from bson import ObjectId
 from typing import Optional
 from models import QuestionCreate, QuestionUpdate, QuestionBulkAction, now_iso
-from auth import get_current_user, require_role
+from auth import require_premium, require_role
 from question_lifecycle import (
     create_mastered_question,
     delete_questions_and_orphaned_masters,
@@ -31,7 +31,7 @@ def _ser(q):
 # ============================================================
 
 @router.get("/topics")
-async def list_topics(class_level: Optional[str] = None, category: Optional[str] = None, user=Depends(get_current_user)):
+async def list_topics(class_level: Optional[str] = None, category: Optional[str] = None, user=Depends(require_premium)):
     from server import db
     if user["role"] == "student":
         class_level = user.get("class_level")
@@ -144,7 +144,7 @@ async def list_questions(
     search: Optional[str] = None,
     limit: int = Query(50, le=500),
     skip: int = Query(0, ge=0),
-    user=Depends(get_current_user),
+    user=Depends(require_premium),
 ):
     from server import db
     from datetime import datetime, timezone, timedelta
@@ -293,7 +293,7 @@ async def bulk_question_action(
 
 
 @router.get("/{qid}")
-async def get_question(qid: str, user=Depends(get_current_user)):
+async def get_question(qid: str, user=Depends(require_premium)):
     from server import db
     try:
         oid = ObjectId(qid)
@@ -315,7 +315,7 @@ async def get_question(qid: str, user=Depends(get_current_user)):
 
 
 @router.post("/{qid}/check")
-async def check_answer(qid: str, body: dict, user=Depends(get_current_user)):
+async def check_answer(qid: str, body: dict, user=Depends(require_premium)):
     """Student practice mode - reveals answer after attempt and calculates daily bonus points."""
     from server import db
     from datetime import datetime, timezone

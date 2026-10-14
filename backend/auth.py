@@ -146,7 +146,12 @@ async def get_current_user(request: Request):
             raise HTTPException(status_code=401, detail="User not found")
         # Serialize _id to string immediately
         user["_id"] = str(user["_id"])
+        user["phone_auth"] = bool(user.get("firebase_uid")) or not bool(
+            user.get("password_hash")
+        )
         user.pop("password_hash", None)
+        if user.get("role") == "student":
+            user["subscription_active"] = has_active_premium(user)
         return user
     except HTTPException:
         raise
@@ -166,3 +171,36 @@ def require_role(*roles: str):
         return user
 
     return _dep
+
+
+def has_active_premium(user: dict) -> bool:
+    """Return whether a student has a currently active premium subscription."""
+    if user.get("role") in ("admin", "superadmin"):
+        return True
+    if not user.get("subscription_active", False):
+        return False
+
+    expires_at = user.get("subscription_expires_at")
+    if not expires_at:
+        return True
+    try:
+        if isinstance(expires_at, str):
+            expiry = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+        else:
+            expiry = expires_at
+        if expiry.tzinfo is None:
+            expiry = expiry.replace(tzinfo=timezone.utc)
+        return expiry > datetime.now(timezone.utc)
+    except (TypeError, ValueError):
+        # An invalid expiry must never grant access indefinitely.
+        return False
+
+
+async def require_premium(user=Depends(get_current_user)):
+    """Allow admins and active premium students; reject all free/expired users."""
+    if not has_active_premium(user):
+        raise HTTPException(
+            status_code=402,
+            detail="An active premium subscription is required",
+        )
+    return user

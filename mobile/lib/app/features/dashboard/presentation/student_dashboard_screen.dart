@@ -51,8 +51,19 @@ String _fmtDate(DateTime dt) {
   if (diff == 0) return 'Today';
   if (diff == 1) return 'Tomorrow';
   const months = [
-    '', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    '',
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec'
   ];
   return '${local.day} ${months[local.month]}';
 }
@@ -89,10 +100,10 @@ class _State extends ConsumerState<StudentDashboardScreen> {
     super.initState();
     // Silently refresh user profile so that premium badges and quick-access
     // cards on the dashboard always show the current subscription state.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(authProvider.notifier).refreshSilently();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await ref.read(authProvider.notifier).refreshSilently();
+      if (mounted) await _load();
     });
-    _load();
   }
 
   @override
@@ -116,31 +127,50 @@ class _State extends ConsumerState<StudentDashboardScreen> {
 
   Future<void> _load() async {
     final user = ref.read(authProvider).user;
+    List upcoming = [];
+    List leaderboard = [];
+    Map? referrals;
+    List announcements = [];
+    List<PromoModel> promos = [];
+
+    // Premium endpoints are intentionally not requested for free users. Safe
+    // dashboard data still loads even if any one request is unavailable.
+    if (user?.subscriptionActive == true) {
+      try {
+        final response = await dioClient.get(ApiEndpoints.upcomingTests);
+        upcoming = response.data['items'] ?? [];
+      } catch (_) {}
+      try {
+        final response = await dioClient.get(ApiEndpoints.leaderboard,
+            queryParameters: {'class_level': user?.classLevel, 'limit': 5});
+        leaderboard = response.data['items'] ?? [];
+      } catch (_) {}
+    }
     try {
-      final results = await Future.wait([
-        dioClient.get(ApiEndpoints.upcomingTests),
-        dioClient.get(ApiEndpoints.leaderboard,
-            queryParameters: {'class_level': user?.classLevel, 'limit': 5}),
-        dioClient.get(ApiEndpoints.myReferrals),
-        dioClient.get(ApiEndpoints.announcements),
-        dioClient.get(ApiEndpoints.promos),
-      ]);
-      if (!mounted) return;
-      final promos = (results[4].data['items'] as List? ?? [])
+      final response = await dioClient.get(ApiEndpoints.myReferrals);
+      referrals = response.data as Map;
+    } catch (_) {}
+    try {
+      final response = await dioClient.get(ApiEndpoints.announcements);
+      announcements = response.data['items'] ?? [];
+    } catch (_) {}
+    try {
+      final response = await dioClient.get(ApiEndpoints.promos);
+      promos = (response.data['items'] as List? ?? [])
           .map((e) => PromoModel.fromJson(e))
           .toList();
-      setState(() {
-        _upcoming = results[0].data['items'] ?? [];
-        _lb = results[1].data['items'] ?? [];
-        _refs = results[2].data as Map;
-        _announcements = results[3].data['items'] ?? [];
-        _promos = promos;
-        _loading = false;
-      });
-      _startPromoTimer();
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
-    }
+    } catch (_) {}
+
+    if (!mounted) return;
+    setState(() {
+      _upcoming = upcoming;
+      _lb = leaderboard;
+      _refs = referrals;
+      _announcements = announcements;
+      _promos = promos;
+      _loading = false;
+    });
+    _startPromoTimer();
   }
 
   @override
@@ -177,8 +207,7 @@ class _State extends ConsumerState<StudentDashboardScreen> {
         msToStart.isNegative == false &&
         msToStart < const Duration(hours: 24);
 
-    final currentPromo =
-        _promos.isNotEmpty ? _promos[_activePromoIndex] : null;
+    final currentPromo = _promos.isNotEmpty ? _promos[_activePromoIndex] : null;
 
     final referralCode = _refs?['referral_code'] as String? ?? '';
 
@@ -206,18 +235,17 @@ class _State extends ConsumerState<StudentDashboardScreen> {
                     if (currentPromo != null) ...[
                       _OffersCard(
                         promo: currentPromo,
-                        countdown:
-                            _promoTimes[currentPromo.id] ??
-                                '${currentPromo.countdownHours}h : 00m : 00s',
+                        countdown: _promoTimes[currentPromo.id] ??
+                            '${currentPromo.countdownHours}h : 00m : 00s',
                         totalPromos: _promos.length,
                         activeIndex: _activePromoIndex,
-                        onDotTap: (i) =>
-                            setState(() => _activePromoIndex = i),
+                        onDotTap: (i) => setState(() => _activePromoIndex = i),
                         onViewTap: () => context.push('/pricing'),
                       ),
                       const SizedBox(height: 16),
                     ] else ...[
-                      _OffersEmptyCard(onViewTap: () => context.push('/pricing')),
+                      _OffersEmptyCard(
+                          onViewTap: () => context.push('/pricing')),
                       const SizedBox(height: 16),
                     ],
 
@@ -236,8 +264,9 @@ class _State extends ConsumerState<StudentDashboardScreen> {
                         isLive: isLive,
                         msToEnd: msToEnd,
                         msToStart: msToStart,
-                        onTap: () => context.push(
-                            isLive
+                        onTap: () => context.push(!isPremium
+                            ? '/pricing'
+                            : isLive
                                 ? '/tests/${soonest?['_id']}/live'
                                 : '/tests'),
                       ),
@@ -248,15 +277,16 @@ class _State extends ConsumerState<StudentDashboardScreen> {
                     _TestScheduleCard(
                       soonest: soonest,
                       soonestStart: soonestStart,
-                      onViewSchedule: () => context.push('/tests'),
+                      onViewSchedule: () =>
+                          context.push(isPremium ? '/tests' : '/pricing'),
                     ),
                     const SizedBox(height: 16),
 
                     // ── 4b. Daily Practice Card ───────────────────────────
                     _DailyPracticeCard(
                       isPremium: isPremium,
-                      onTap: () => context.push(
-                          isPremium ? '/questions' : '/pricing'),
+                      onTap: () =>
+                          context.push(isPremium ? '/questions' : '/pricing'),
                     ),
                     const SizedBox(height: 16),
 
@@ -279,7 +309,7 @@ class _State extends ConsumerState<StudentDashboardScreen> {
                           color: Color(0xFFE8F0FE),
                           iconColor: Color(0xFF1A73E8),
                           route: '/explorer',
-                          isPremiumOnly: false,
+                          isPremiumOnly: true,
                         ),
                         _QuickItem(
                           icon: Icons.quiz_rounded,
@@ -287,7 +317,7 @@ class _State extends ConsumerState<StudentDashboardScreen> {
                           color: Color(0xFFF3E8FF),
                           iconColor: Color(0xFF7C3AED),
                           route: '/questions',
-                          isPremiumOnly: false,
+                          isPremiumOnly: true,
                         ),
                         _QuickItem(
                           icon: Icons.assignment_rounded,
@@ -295,7 +325,7 @@ class _State extends ConsumerState<StudentDashboardScreen> {
                           color: Color(0xFFE6F4EA),
                           iconColor: Color(0xFF1E8E3E),
                           route: '/tests',
-                          isPremiumOnly: false,
+                          isPremiumOnly: true,
                         ),
                         _QuickItem(
                           icon: Icons.play_circle_rounded,
@@ -303,7 +333,7 @@ class _State extends ConsumerState<StudentDashboardScreen> {
                           color: Color(0xFFFCE8E6),
                           iconColor: Color(0xFFD93025),
                           route: '/videos',
-                          isPremiumOnly: false,
+                          isPremiumOnly: true,
                         ),
                         _QuickItem(
                           icon: Icons.bar_chart_rounded,
@@ -330,7 +360,8 @@ class _State extends ConsumerState<StudentDashboardScreen> {
                       rank: myRank >= 0 ? myRank + 1 : null,
                       points: user?.totalPoints ?? 0,
                       isPremium: isPremium,
-                      onViewAll: () => context.push('/leaderboard'),
+                      onViewAll: () =>
+                          context.push(isPremium ? '/leaderboard' : '/pricing'),
                     ),
                     const SizedBox(height: 16),
 
@@ -343,7 +374,8 @@ class _State extends ConsumerState<StudentDashboardScreen> {
                           'See exactly where you shine and what to work on.',
                       actionText: 'View my analytics',
                       backgroundIcon: Icons.bar_chart_rounded,
-                      onTap: () => context.push('/my-analytics'),
+                      onTap: () => context
+                          .push(isPremium ? '/my-analytics' : '/pricing'),
                     ),
                     const SizedBox(height: 12),
                     _GradientCTA(
@@ -405,8 +437,8 @@ class _WelcomeHeader extends StatelessWidget {
               Row(
                 children: [
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 3),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
                       gradient: isPremium
                           ? const LinearGradient(colors: [
@@ -433,7 +465,8 @@ class _WelcomeHeader extends StatelessWidget {
                           style: GoogleFonts.inter(
                             fontSize: 11,
                             fontWeight: FontWeight.w600,
-                            color: isPremium ? Colors.white : AppColors.slate500,
+                            color:
+                                isPremium ? Colors.white : AppColors.slate500,
                           ),
                         ),
                       ],
@@ -497,8 +530,8 @@ class _CompactAnnouncementBanner extends StatelessWidget {
               itemCount: announcements.length,
               separatorBuilder: (_, __) => Container(
                 width: 1,
-                margin: const EdgeInsets.symmetric(
-                    vertical: 16, horizontal: 10),
+                margin:
+                    const EdgeInsets.symmetric(vertical: 16, horizontal: 10),
                 color: Colors.white.withAlpha(40),
               ),
               itemBuilder: (context, i) {
@@ -510,8 +543,19 @@ class _CompactAnnouncementBanner extends StatelessWidget {
                   try {
                     final dt = DateTime.parse(createdAt).toLocal();
                     const months = [
-                      '', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-                      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+                      '',
+                      'Jan',
+                      'Feb',
+                      'Mar',
+                      'Apr',
+                      'May',
+                      'Jun',
+                      'Jul',
+                      'Aug',
+                      'Sep',
+                      'Oct',
+                      'Nov',
+                      'Dec'
                     ];
                     dateStr = '${dt.day} ${months[dt.month]}';
                   } catch (_) {}
@@ -519,8 +563,7 @@ class _CompactAnnouncementBanner extends StatelessWidget {
                 return GestureDetector(
                   onTap: () => context.push('/dashboard'),
                   child: Padding(
-                    padding:
-                        const EdgeInsets.symmetric(vertical: 10),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -715,8 +758,7 @@ class _OffersCard extends StatelessWidget {
                         children: [
                           Text('View Offer',
                               style: GoogleFonts.inter(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700)),
+                                  fontSize: 12, fontWeight: FontWeight.w700)),
                           const SizedBox(width: 5),
                           const Icon(Icons.arrow_forward_rounded, size: 13),
                         ],
@@ -730,8 +772,7 @@ class _OffersCard extends StatelessWidget {
                           onTap: () => onDotTap(i),
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 200),
-                            margin:
-                                const EdgeInsets.symmetric(horizontal: 3),
+                            margin: const EdgeInsets.symmetric(horizontal: 3),
                             width: i == activeIndex ? 16 : 6,
                             height: 6,
                             decoration: BoxDecoration(
@@ -817,8 +858,7 @@ class _OffersEmptyCard extends StatelessWidget {
           GestureDetector(
             onTap: onViewTap,
             child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
               decoration: BoxDecoration(
                 gradient: AppColors.blueVioletGradient,
                 borderRadius: BorderRadius.circular(99),
@@ -958,8 +998,7 @@ class _TestScheduleCard extends StatelessWidget {
           GestureDetector(
             onTap: onViewSchedule,
             child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
                 color: AppColors.navy,
                 borderRadius: BorderRadius.circular(99),
@@ -1087,8 +1126,8 @@ class _DailyPracticeCard extends StatelessWidget {
                 GestureDetector(
                   onTap: onTap,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 13, vertical: 9),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
                     decoration: BoxDecoration(
                       gradient: const LinearGradient(
                         colors: [Color(0xFFFBBF24), Color(0xFFF97316)],
@@ -1321,8 +1360,7 @@ class _ReferralCodeCard extends StatelessWidget {
               );
             },
             child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
               decoration: BoxDecoration(
                 color: AppColors.slate100,
                 borderRadius: BorderRadius.circular(8),
@@ -1376,8 +1414,7 @@ class _QuickItem {
 class _QuickAccessSection extends ConsumerWidget {
   final List<_QuickItem> items;
   final bool isPremium;
-  const _QuickAccessSection(
-      {required this.items, required this.isPremium});
+  const _QuickAccessSection({required this.items, required this.isPremium});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1397,7 +1434,7 @@ class _QuickAccessSection extends ConsumerWidget {
               ),
             ),
             GestureDetector(
-              onTap: () => context.push('/explorer'),
+              onTap: () => context.push(isPremium ? '/explorer' : '/pricing'),
               child: Row(
                 children: [
                   Text(
@@ -1447,8 +1484,7 @@ class _QuickAccessSection extends ConsumerWidget {
 class _QuickAccessCard extends StatefulWidget {
   final _QuickItem item;
   final bool isPremium;
-  const _QuickAccessCard(
-      {required this.item, required this.isPremium});
+  const _QuickAccessCard({required this.item, required this.isPremium});
 
   @override
   State<_QuickAccessCard> createState() => _QuickAccessCardState();
@@ -1491,15 +1527,14 @@ class _QuickAccessCardState extends State<_QuickAccessCard>
       onTapDown: _onTapDown,
       onTapUp: _onTapUp,
       onTapCancel: _onTapCancel,
-      onTap: () => context.push(widget.item.route),
+      onTap: () => context.push(isLocked ? '/pricing' : widget.item.route),
       child: AnimatedBuilder(
         animation: _scale,
         builder: (_, child) =>
             Transform.scale(scale: _scale.value, child: child),
         child: Container(
           // Target: ~95×95 — achieved via padding + constrained icon
-          padding:
-              const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
           decoration: BoxDecoration(
             color: widget.item.color,
             borderRadius: BorderRadius.circular(14),
@@ -1543,8 +1578,7 @@ class _QuickAccessCardState extends State<_QuickAccessCard>
                         decoration: BoxDecoration(
                           gradient: AppColors.navyPurpleGradient,
                           shape: BoxShape.circle,
-                          border: Border.all(
-                              color: Colors.white, width: 1.5),
+                          border: Border.all(color: Colors.white, width: 1.5),
                         ),
                         child: const Icon(Icons.lock_rounded,
                             size: 8, color: Colors.white),
@@ -1582,8 +1616,6 @@ class _QuickAccessCardState extends State<_QuickAccessCard>
     );
   }
 }
-
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Gradient CTA card
@@ -1651,13 +1683,12 @@ class _GradientCTA extends StatelessWidget {
                 ),
                 const SizedBox(height: 16),
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 9),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
                   decoration: BoxDecoration(
                     color: Colors.white.withAlpha(25),
                     borderRadius: BorderRadius.circular(99),
-                    border:
-                        Border.all(color: Colors.white.withAlpha(60)),
+                    border: Border.all(color: Colors.white.withAlpha(60)),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -1712,12 +1743,10 @@ class _TestReminderBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Color bgColor = isLive
-        ? AppColors.violet.withAlpha(20)
-        : AppColors.blue.withAlpha(10);
-    final Color borderColor = isLive
-        ? AppColors.violet.withAlpha(80)
-        : AppColors.blue.withAlpha(50);
+    final Color bgColor =
+        isLive ? AppColors.violet.withAlpha(20) : AppColors.blue.withAlpha(10);
+    final Color borderColor =
+        isLive ? AppColors.violet.withAlpha(80) : AppColors.blue.withAlpha(50);
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1786,8 +1815,7 @@ class _TestReminderBanner extends StatelessWidget {
             style: ElevatedButton.styleFrom(
               backgroundColor: isLive ? AppColors.violet : AppColors.navy,
               foregroundColor: Colors.white,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(99)),
               elevation: 0,
@@ -1874,8 +1902,8 @@ class _YourRankingCard extends StatelessWidget {
               GestureDetector(
                 onTap: onViewAll,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 5),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
                     color: AppColors.blue.withAlpha(12),
                     borderRadius: BorderRadius.circular(99),

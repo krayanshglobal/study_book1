@@ -1,0 +1,6 @@
+# Copy this file to key.properties and keep that file private.
+# Every published APK/AAB must use the same backed-up keystore.
+storePassword=CHANGE_ME
+keyPassword=CHANGE_ME
+keyAlias=cmaths
+storeFile=../app/cmaths-release-key.jks

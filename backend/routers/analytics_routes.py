@@ -6,7 +6,7 @@ from collections import defaultdict
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Response
 from typing import Optional
 from bson import ObjectId
-from auth import get_current_user, require_role
+from auth import get_current_user, require_premium, require_role
 from models import now_iso
 import logging
 
@@ -152,7 +152,7 @@ async def admin_tests_summary(class_level: Optional[str] = None, _=Depends(requi
 
 # =============== STUDENT ANALYTICS ===============
 @router.get("/api/students/me/analytics")
-async def student_analytics(user=Depends(get_current_user)):
+async def student_analytics(user=Depends(require_premium)):
     """Personal performance: strengths/weaknesses by topic + recent scores."""
     from server import db
     qmap: dict = {}
@@ -210,7 +210,7 @@ async def student_analytics(user=Depends(get_current_user)):
 
 # =============== DAILY PRACTICE ===============
 @router.get("/api/students/daily-practice")
-async def daily_practice(user=Depends(get_current_user)):
+async def daily_practice(user=Depends(require_premium)):
     """
     Returns today's 10 practice questions for the student's class level.
     Same set for the entire day (date-seeded random). Also returns
@@ -322,7 +322,7 @@ async def daily_practice(user=Depends(get_current_user)):
 
 # =============== 1-MONTH ANALYSIS ===============
 @router.get("/api/students/me/monthly-analysis")
-async def student_monthly_analysis(user=Depends(get_current_user)):
+async def student_monthly_analysis(user=Depends(require_premium)):
     """
     30-day practice analysis: daily activity heatmap, topic breakdown,
     monthly totals and streak.

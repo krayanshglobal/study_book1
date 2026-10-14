@@ -34,6 +34,8 @@ dist
 
 *token.json*
 *credentials.json*
+rzp-key*.csv
+*razorpay*key*.csv
 
 # Logs and debug files
 npm-debug.log*
@@ -92,6 +94,7 @@ frontend/node_modules/.cache/default-development/7.pack
 frontend/.firebase/
 mobile/android/app/google-services.json
 mobile/ios/Runner/GoogleService-Info.plist
+google-services*.json
 firebase-service-account*.json
 *-firebase-adminsdk-*.json
 

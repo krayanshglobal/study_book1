@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,16 +14,95 @@ import 'app/features/auth/providers/auth_provider.dart';
 import 'app/features/common/routes/app_router.dart';
 
 void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  await FirebaseConfig.initialize();
-  // Initialize the cookie-based Dio client once at startup
-  dioClient = await DioClient.create();
+  await runZonedGuarded<Future<void>>(() async {
+    WidgetsFlutterBinding.ensureInitialized();
 
-  runApp(
-    const ProviderScope(
-      child: CMathsApp(),
-    ),
-  );
+    // Keep recoverable framework/plugin exceptions from terminating the
+    // process without diagnostics on release builds.
+    FlutterError.onError = (details) {
+      FlutterError.presentError(details);
+      debugPrint('[FLUTTER ERROR] ${details.exceptionAsString()}');
+      debugPrintStack(stackTrace: details.stack);
+    };
+    PlatformDispatcher.instance.onError = (error, stack) {
+      debugPrint('[UNCAUGHT ASYNC ERROR] $error');
+      debugPrintStack(stackTrace: stack);
+      return true;
+    };
+
+    try {
+      await FirebaseConfig.initialize().timeout(const Duration(seconds: 15));
+    } catch (error, stack) {
+      // Password login and cached sessions must continue even if Firebase is
+      // unavailable. OTP will display a specific configuration/network error.
+      debugPrint('[FIREBASE STARTUP] $error');
+      debugPrintStack(stackTrace: stack);
+    }
+
+    try {
+      dioClient = await DioClient.create().timeout(const Duration(seconds: 15));
+    } catch (error, stack) {
+      debugPrint('[APP STARTUP] $error');
+      debugPrintStack(stackTrace: stack);
+      runApp(_StartupFailureApp(error: error.toString()));
+      return;
+    }
+
+    runApp(
+      const ProviderScope(
+        child: CMathsApp(),
+      ),
+    );
+  }, (error, stack) {
+    debugPrint('[UNCAUGHT ZONE ERROR] $error');
+    debugPrintStack(stackTrace: stack);
+  });
+}
+
+class _StartupFailureApp extends StatelessWidget {
+  final String error;
+
+  const _StartupFailureApp({required this.error});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: Scaffold(
+        body: SafeArea(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.error_outline, size: 52, color: Colors.red),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'C Maths could not start',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Please restart the app. If the problem continues, check internet access and update the app.',
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    error,
+                    textAlign: TextAlign.center,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 11, color: Colors.grey),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// Custom back button dispatcher that implements double-back-to-exit.

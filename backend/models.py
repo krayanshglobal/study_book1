@@ -43,6 +43,7 @@ class MobileVerifyOtpInput(BaseModel):
     phone: str
     otp: str
     name: Optional[str] = None
+    email: Optional[EmailStr] = None
     class_level: Optional[Literal["8", "9", "10"]] = None
     referral_code: Optional[str] = None
     verification_only: bool = False
@@ -51,6 +52,7 @@ class MobileVerifyOtpInput(BaseModel):
 class FirebasePhoneAuthInput(BaseModel):
     id_token: str
     name: Optional[str] = None
+    email: Optional[EmailStr] = None
     class_level: Optional[Literal["8", "9", "10"]] = None
     referral_code: Optional[str] = None
     verification_only: bool = False

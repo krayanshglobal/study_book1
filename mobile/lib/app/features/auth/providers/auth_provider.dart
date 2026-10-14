@@ -16,7 +16,11 @@ class AuthState {
 
   const AuthState({this.user, this.isLoading = false, this.error});
 
-  AuthState copyWith({UserModel? user, bool? isLoading, String? error, bool clearUser = false}) {
+  AuthState copyWith(
+      {UserModel? user,
+      bool? isLoading,
+      String? error,
+      bool clearUser = false}) {
     return AuthState(
       user: clearUser ? null : (user ?? this.user),
       isLoading: isLoading ?? this.isLoading,
@@ -29,6 +33,7 @@ class AuthState {
 
 class AuthNotifier extends StateNotifier<AuthState> {
   final AuthService _authService;
+  int _mobileOtpGeneration = 0;
 
   AuthNotifier(this._authService) : super(const AuthState(isLoading: true)) {
     dioClient.onUnauthorized = () {
@@ -100,15 +105,25 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   Future<Map<String, dynamic>?> sendMobileOtp(String phone) async {
+    final generation = ++_mobileOtpGeneration;
     state = state.copyWith(isLoading: true, error: null);
     try {
       final res = await _authService.sendMobileOtp(phone);
+      if (generation != _mobileOtpGeneration) return null;
       state = state.copyWith(isLoading: false);
       return res;
     } catch (e) {
+      if (generation != _mobileOtpGeneration) return null;
       state = AuthState(isLoading: false, error: AuthService.formatError(e));
       return null;
     }
+  }
+
+  /// Releases any loading state left by a dismissed OTP sheet. Late Firebase
+  /// callbacks from that sheet are ignored and cannot disable the login UI.
+  void cancelMobileOtpFlow() {
+    _mobileOtpGeneration++;
+    state = state.copyWith(isLoading: false, error: null);
   }
 
   Future<Map<String, dynamic>?> verifyOtpForRegistration({
@@ -117,7 +132,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      final res = await _authService.verifyOtpForRegistration(phone: phone, otp: otp);
+      final res =
+          await _authService.verifyOtpForRegistration(phone: phone, otp: otp);
       state = state.copyWith(isLoading: false);
       return res;
     } catch (e) {
@@ -130,6 +146,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     required String phone,
     required String otp,
     String? name,
+    String? email,
     String? classLevel,
     String? referralCode,
   }) async {
@@ -139,6 +156,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
         phone: phone,
         otp: otp,
         name: name,
+        email: email,
         classLevel: classLevel,
         referralCode: referralCode,
       );
@@ -185,6 +203,14 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   Future<void> refresh() => checkAuthStatus();
+
+  /// Applies the user returned by a successful profile mutation immediately,
+  /// preventing an older cached profile from flashing back into the UI.
+  Future<void> applyUpdatedUser(Map<String, dynamic> json) async {
+    final user = UserModel.fromJson(json);
+    await StorageService.saveSession(user: user);
+    state = AuthState(user: user, isLoading: false);
+  }
 
   Future<void> refreshSilently() async {
     if (!state.isAuthenticated) return;

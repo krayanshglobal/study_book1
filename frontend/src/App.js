@@ -66,15 +66,15 @@ function App() {
 
           {/* Student */}
           <Route path="/dashboard" element={<ProtectedRoute><Layout><DashboardRouter /></Layout></ProtectedRoute>} />
-          <Route path="/explorer" element={<ProtectedRoute roles={["student"]}><Layout><Explorer /></Layout></ProtectedRoute>} />
-          <Route path="/questions" element={<ProtectedRoute roles={["student"]}><Layout><QuestionBank /></Layout></ProtectedRoute>} />
-          <Route path="/tests" element={<ProtectedRoute roles={["student"]}><Layout><Tests /></Layout></ProtectedRoute>} />
-          <Route path="/tests/:id/live" element={<ProtectedRoute roles={["student"]}><LiveTest /></ProtectedRoute>} />
-          <Route path="/tests/:id/result" element={<ProtectedRoute roles={["student"]}><Layout><TestResult /></Layout></ProtectedRoute>} />
-          <Route path="/videos" element={<ProtectedRoute roles={["student"]}><Layout><Videos /></Layout></ProtectedRoute>} />
-          <Route path="/leaderboard" element={<ProtectedRoute><Layout><Leaderboard /></Layout></ProtectedRoute>} />
-          <Route path="/my-analytics" element={<ProtectedRoute roles={["student"]}><Layout><MyAnalytics /></Layout></ProtectedRoute>} />
-          <Route path="/daily-practice" element={<ProtectedRoute roles={["student"]}><Layout><DailyPractice /></Layout></ProtectedRoute>} />
+          <Route path="/explorer" element={<ProtectedRoute roles={["student"]} premium><Layout><Explorer /></Layout></ProtectedRoute>} />
+          <Route path="/questions" element={<ProtectedRoute roles={["student"]} premium><Layout><QuestionBank /></Layout></ProtectedRoute>} />
+          <Route path="/tests" element={<ProtectedRoute roles={["student"]} premium><Layout><Tests /></Layout></ProtectedRoute>} />
+          <Route path="/tests/:id/live" element={<ProtectedRoute roles={["student"]} premium><LiveTest /></ProtectedRoute>} />
+          <Route path="/tests/:id/result" element={<ProtectedRoute roles={["student"]} premium><Layout><TestResult /></Layout></ProtectedRoute>} />
+          <Route path="/videos" element={<ProtectedRoute roles={["student"]} premium><Layout><Videos /></Layout></ProtectedRoute>} />
+          <Route path="/leaderboard" element={<ProtectedRoute roles={["student"]} premium><Layout><Leaderboard /></Layout></ProtectedRoute>} />
+          <Route path="/my-analytics" element={<ProtectedRoute roles={["student"]} premium><Layout><MyAnalytics /></Layout></ProtectedRoute>} />
+          <Route path="/daily-practice" element={<ProtectedRoute roles={["student"]} premium><Layout><DailyPractice /></Layout></ProtectedRoute>} />
           <Route path="/referrals" element={<ProtectedRoute roles={["student"]}><Layout><Referrals /></Layout></ProtectedRoute>} />
           <Route path="/pricing" element={<ProtectedRoute roles={["student"]}><Layout><Pricing /></Layout></ProtectedRoute>} />
           <Route path="/payment/success" element={<ProtectedRoute roles={["student"]}><Layout><PaymentSuccess /></Layout></ProtectedRoute>} />

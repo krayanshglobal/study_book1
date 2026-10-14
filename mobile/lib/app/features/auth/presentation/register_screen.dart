@@ -73,9 +73,11 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen>
   }
 
   Future<void> _startPhoneVerification() async {
+    if (_sendingOtp) return;
     final rawPhone = _phoneCtrl.text.trim();
     final digits = rawPhone.replaceAll(RegExp(r'\D'), '');
-    if (digits.length < 10) {
+    if (digits.length != 10 &&
+        !(digits.length == 12 && digits.startsWith('91'))) {
       showToast(context, 'Enter a valid 10-digit mobile number', isError: true);
       return;
     }
@@ -87,18 +89,23 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen>
 
     if (res != null && res['ok'] == true) {
       if (res['exists'] == true) {
-        showToast(context, 'This mobile number is already registered. Please sign in.', isError: true);
+        showToast(context,
+            'This mobile number is already registered. Please sign in.',
+            isError: true);
         return;
       }
 
-      showModalBottomSheet(
+      await showModalBottomSheet(
         context: context,
         isScrollControlled: true,
+        useSafeArea: true,
         backgroundColor: Colors.transparent,
         builder: (ctx) => _RegistrationOtpSheet(
           phone: rawPhone,
+          automaticallyVerified: res['auto_verified'] == true,
           onVerified: (token) {
             Navigator.pop(ctx);
+            if (!mounted) return;
             setState(() {
               _phoneVerified = true;
               _verificationToken = token;
@@ -108,6 +115,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen>
           },
         ),
       );
+      ref.read(authProvider.notifier).cancelMobileOtpFlow();
     } else {
       final err = ref.read(authProvider).error ?? 'Failed to send OTP';
       showToast(context, err, isError: true);
@@ -118,7 +126,8 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen>
     if (!_formKey.currentState!.validate()) return;
 
     if (!_phoneVerified) {
-      showToast(context, 'Please verify your mobile number first.', isError: true);
+      showToast(context, 'Please verify your mobile number first.',
+          isError: true);
       return;
     }
 
@@ -128,7 +137,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen>
           phone: _phoneCtrl.text.trim(),
           password: _passwordCtrl.text,
           classLevel: _classLevel,
-          referralCode: _referralCtrl.text.trim().isEmpty ? null : _referralCtrl.text.trim(),
+          referralCode: _referralCtrl.text.trim().isEmpty
+              ? null
+              : _referralCtrl.text.trim(),
           verificationToken: _verificationToken,
         );
     if (!mounted) return;
@@ -166,13 +177,13 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen>
               ),
             ),
           ),
-
           SafeArea(
             child: FadeTransition(
               opacity: _fadeIn,
               child: Center(
                 child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 420),
                     child: Form(
@@ -228,7 +239,10 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen>
                                   controller: _nameCtrl,
                                   prefixIcon: Icons.person_outline_rounded,
                                   textCapitalization: TextCapitalization.words,
-                                  validator: (v) => (v == null || v.trim().isEmpty) ? 'Name is required' : null,
+                                  validator: (v) =>
+                                      (v == null || v.trim().isEmpty)
+                                          ? 'Name is required'
+                                          : null,
                                 ),
                                 const SizedBox(height: 16),
                                 CustomTextField(
@@ -251,7 +265,8 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen>
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Row(
-                                      crossAxisAlignment: CrossAxisAlignment.end,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.end,
                                       children: [
                                         Expanded(
                                           child: CustomTextField(
@@ -262,29 +277,53 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen>
                                             keyboardType: TextInputType.phone,
                                             prefixIcon: Icons.phone_outlined,
                                             onChanged: _onPhoneChanged,
-                                            validator: (v) => (v == null || v.trim().isEmpty) ? 'Phone is required' : null,
+                                            validator: (v) =>
+                                                (v == null || v.trim().isEmpty)
+                                                    ? 'Phone is required'
+                                                    : null,
                                           ),
                                         ),
                                         const SizedBox(width: 8),
                                         Padding(
-                                          padding: const EdgeInsets.only(bottom: 2),
+                                          padding:
+                                              const EdgeInsets.only(bottom: 2),
                                           child: _phoneVerified
                                               ? Container(
                                                   height: 48,
-                                                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                                                  padding: const EdgeInsets
+                                                      .symmetric(
+                                                      horizontal: 12),
                                                   decoration: BoxDecoration(
-                                                    color: AppColors.emerald.withAlpha(25),
-                                                    borderRadius: BorderRadius.circular(14),
-                                                    border: Border.all(color: AppColors.emerald),
+                                                    color: AppColors.emerald
+                                                        .withAlpha(25),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            14),
+                                                    border: Border.all(
+                                                        color:
+                                                            AppColors.emerald),
                                                   ),
                                                   child: Row(
-                                                    mainAxisSize: MainAxisSize.min,
+                                                    mainAxisSize:
+                                                        MainAxisSize.min,
                                                     children: [
-                                                      const Icon(Icons.check_circle_rounded, color: AppColors.emerald, size: 16),
+                                                      const Icon(
+                                                          Icons
+                                                              .check_circle_rounded,
+                                                          color:
+                                                              AppColors.emerald,
+                                                          size: 16),
                                                       const SizedBox(width: 4),
                                                       Text(
                                                         'Verified',
-                                                        style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.emerald),
+                                                        style:
+                                                            GoogleFonts.inter(
+                                                                fontSize: 12,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w700,
+                                                                color: AppColors
+                                                                    .emerald),
                                                       ),
                                                     ],
                                                   ),
@@ -292,17 +331,42 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen>
                                               : SizedBox(
                                                   height: 48,
                                                   child: ElevatedButton(
-                                                    onPressed: _sendingOtp ? null : _startPhoneVerification,
-                                                    style: ElevatedButton.styleFrom(
-                                                      backgroundColor: AppColors.violet,
-                                                      foregroundColor: AppColors.white,
+                                                    onPressed: _sendingOtp
+                                                        ? null
+                                                        : _startPhoneVerification,
+                                                    style: ElevatedButton
+                                                        .styleFrom(
+                                                      backgroundColor:
+                                                          AppColors.violet,
+                                                      foregroundColor:
+                                                          AppColors.white,
                                                       elevation: 0,
-                                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                                                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                                                      shape:
+                                                          RoundedRectangleBorder(
+                                                              borderRadius:
+                                                                  BorderRadius
+                                                                      .circular(
+                                                                          14)),
+                                                      padding: const EdgeInsets
+                                                          .symmetric(
+                                                          horizontal: 14),
                                                     ),
                                                     child: _sendingOtp
-                                                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                                                        : Text('Verify', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700)),
+                                                        ? const SizedBox(
+                                                            width: 16,
+                                                            height: 16,
+                                                            child:
+                                                                CircularProgressIndicator(
+                                                                    color: Colors
+                                                                        .white,
+                                                                    strokeWidth:
+                                                                        2))
+                                                        : Text('Verify',
+                                                            style: GoogleFonts.inter(
+                                                                fontSize: 13,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w700)),
                                                   ),
                                                 ),
                                         ),
@@ -320,7 +384,10 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen>
                                         },
                                         child: Text(
                                           'Edit number',
-                                          style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.blue),
+                                          style: GoogleFonts.inter(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w600,
+                                              color: AppColors.blue),
                                         ),
                                       ),
                                     ],
@@ -336,11 +403,14 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen>
                                   prefixIcon: Icons.lock_outline_rounded,
                                   suffixIcon: IconButton(
                                     icon: Icon(
-                                      _obscure ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                                      _obscure
+                                          ? Icons.visibility_off_outlined
+                                          : Icons.visibility_outlined,
                                       color: AppColors.slate400,
                                       size: 20,
                                     ),
-                                    onPressed: () => setState(() => _obscure = !_obscure),
+                                    onPressed: () =>
+                                        setState(() => _obscure = !_obscure),
                                   ),
                                   validator: (v) {
                                     if (v == null || v.length < 6) {
@@ -357,20 +427,39 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen>
                                     labelText: 'Class (optional)',
                                     filled: true,
                                     fillColor: AppColors.slate50,
-                                    prefixIcon: const Icon(Icons.school_outlined, size: 20, color: AppColors.slate400),
-                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: AppColors.slate200)),
-                                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: AppColors.slate200)),
-                                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: AppColors.blue, width: 2)),
-                                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                                    prefixIcon: const Icon(
+                                        Icons.school_outlined,
+                                        size: 20,
+                                        color: AppColors.slate400),
+                                    border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(14),
+                                        borderSide: const BorderSide(
+                                            color: AppColors.slate200)),
+                                    enabledBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(14),
+                                        borderSide: const BorderSide(
+                                            color: AppColors.slate200)),
+                                    focusedBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(14),
+                                        borderSide: const BorderSide(
+                                            color: AppColors.blue, width: 2)),
+                                    contentPadding: const EdgeInsets.symmetric(
+                                        horizontal: 16, vertical: 16),
                                   ),
-                                  hint: Text('Select class', style: GoogleFonts.inter(color: AppColors.slate400, fontSize: 14)),
+                                  hint: Text('Select class',
+                                      style: GoogleFonts.inter(
+                                          color: AppColors.slate400,
+                                          fontSize: 14)),
                                   items: _classes
                                       .map((c) => DropdownMenuItem(
                                             value: c,
-                                            child: Text('Class $c', style: GoogleFonts.inter(fontSize: 14)),
+                                            child: Text('Class $c',
+                                                style: GoogleFonts.inter(
+                                                    fontSize: 14)),
                                           ))
                                       .toList(),
-                                  onChanged: (v) => setState(() => _classLevel = v),
+                                  onChanged: (v) =>
+                                      setState(() => _classLevel = v),
                                 ),
                                 const SizedBox(height: 16),
                                 CustomTextField(
@@ -382,9 +471,13 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen>
                                 const SizedBox(height: 24),
 
                                 CustomButton(
-                                  text: _phoneVerified ? 'Create account' : 'Verify Phone to Continue',
+                                  text: _phoneVerified
+                                      ? 'Create account'
+                                      : 'Verify Phone to Continue',
                                   isLoading: state.isLoading,
-                                  onPressed: _phoneVerified ? _submit : _startPhoneVerification,
+                                  onPressed: _phoneVerified
+                                      ? _submit
+                                      : _startPhoneVerification,
                                 ),
                               ],
                             ),
@@ -397,7 +490,8 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen>
                             children: [
                               Text(
                                 'Already have an account? ',
-                                style: GoogleFonts.inter(color: AppColors.slate500, fontSize: 14),
+                                style: GoogleFonts.inter(
+                                    color: AppColors.slate500, fontSize: 14),
                               ),
                               GestureDetector(
                                 onTap: () => context.go('/login'),
@@ -429,11 +523,17 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen>
 // ── REGISTRATION OTP SHEET ───────────────────────────────────────────────────
 class _RegistrationOtpSheet extends ConsumerStatefulWidget {
   final String phone;
+  final bool automaticallyVerified;
   final ValueChanged<String?> onVerified;
-  const _RegistrationOtpSheet({required this.phone, required this.onVerified});
+  const _RegistrationOtpSheet({
+    required this.phone,
+    required this.automaticallyVerified,
+    required this.onVerified,
+  });
 
   @override
-  ConsumerState<_RegistrationOtpSheet> createState() => _RegistrationOtpSheetState();
+  ConsumerState<_RegistrationOtpSheet> createState() =>
+      _RegistrationOtpSheetState();
 }
 
 class _RegistrationOtpSheetState extends ConsumerState<_RegistrationOtpSheet> {
@@ -468,7 +568,8 @@ class _RegistrationOtpSheetState extends ConsumerState<_RegistrationOtpSheet> {
   }
 
   Future<void> _resendOtp() async {
-    final res = await ref.read(authProvider.notifier).sendMobileOtp(widget.phone);
+    final res =
+        await ref.read(authProvider.notifier).sendMobileOtp(widget.phone);
     if (!mounted) return;
     if (res != null && res['ok'] == true) {
       _startTimer();
@@ -480,8 +581,9 @@ class _RegistrationOtpSheetState extends ConsumerState<_RegistrationOtpSheet> {
   }
 
   Future<void> _verifyOtp() async {
+    if (_verifying) return;
     final otp = _otpCtrl.text.trim();
-    if (otp.length != 6) {
+    if (!widget.automaticallyVerified && otp.length != 6) {
       showToast(context, 'Enter 6-digit OTP code', isError: true);
       return;
     }
@@ -494,7 +596,8 @@ class _RegistrationOtpSheetState extends ConsumerState<_RegistrationOtpSheet> {
     if (!mounted) return;
     setState(() => _verifying = false);
 
-    if (res != null && (res['verified'] == true || res['verification_token'] != null)) {
+    if (res != null &&
+        (res['verified'] == true || res['verification_token'] != null)) {
       final token = res['verification_token']?.toString();
       widget.onVerified(token);
     } else {
@@ -505,74 +608,89 @@ class _RegistrationOtpSheetState extends ConsumerState<_RegistrationOtpSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      padding: EdgeInsets.only(
-        left: 24,
-        right: 24,
-        top: 24,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return SafeArea(
+      top: false,
+      child: SingleChildScrollView(
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: Container(
+          decoration: const BoxDecoration(
+            color: AppColors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Verify your mobile number',
+                    style: GoogleFonts.fraunces(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.navy,
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded,
+                        color: AppColors.slate400),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
               Text(
-                'Verify your mobile number',
-                style: GoogleFonts.fraunces(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.navy,
+                widget.automaticallyVerified
+                    ? 'Firebase verified ${widget.phone} automatically.'
+                    : 'OTP sent to: ${widget.phone}',
+                style: GoogleFonts.inter(
+                    fontSize: 13,
+                    color: AppColors.slate500,
+                    fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 16),
+              if (!widget.automaticallyVerified)
+                CustomTextField(
+                  label: 'Enter 6-Digit OTP',
+                  hint: '123456',
+                  controller: _otpCtrl,
+                  keyboardType: TextInputType.number,
+                  prefixIcon: Icons.pin_outlined,
                 ),
+              const SizedBox(height: 20),
+              CustomButton(
+                text: widget.automaticallyVerified ? 'Continue' : 'Verify OTP',
+                isLoading: _verifying,
+                onPressed: _verifyOtp,
               ),
-              IconButton(
-                icon: const Icon(Icons.close_rounded, color: AppColors.slate400),
-                onPressed: () => Navigator.pop(context),
-              ),
+              const SizedBox(height: 14),
+              if (!widget.automaticallyVerified)
+                Center(
+                  child: _countdown > 0
+                      ? Text(
+                          'Resend in ${_countdown}s',
+                          style: GoogleFonts.inter(
+                              fontSize: 12,
+                              color: AppColors.slate400,
+                              fontWeight: FontWeight.w600),
+                        )
+                      : TextButton(
+                          onPressed: _resendOtp,
+                          child: Text('Resend OTP',
+                              style: GoogleFonts.inter(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.blue)),
+                        ),
+                ),
             ],
           ),
-          const SizedBox(height: 12),
-          Text(
-            'OTP sent to: ${widget.phone}',
-            style: GoogleFonts.inter(fontSize: 13, color: AppColors.slate500, fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 16),
-
-          CustomTextField(
-            label: 'Enter 6-Digit OTP',
-            hint: '123456',
-            controller: _otpCtrl,
-            keyboardType: TextInputType.number,
-            prefixIcon: Icons.pin_outlined,
-          ),
-          const SizedBox(height: 20),
-
-          CustomButton(
-            text: 'Verify OTP',
-            isLoading: _verifying,
-            onPressed: _verifyOtp,
-          ),
-
-          const SizedBox(height: 14),
-
-          Center(
-            child: _countdown > 0
-                ? Text(
-                    'Resend in ${_countdown}s',
-                    style: GoogleFonts.inter(fontSize: 12, color: AppColors.slate400, fontWeight: FontWeight.w600),
-                  )
-                : TextButton(
-                    onPressed: _resendOtp,
-                    child: Text('Resend OTP', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.blue)),
-                  ),
-          ),
-        ],
+        ),
       ),
     );
   }

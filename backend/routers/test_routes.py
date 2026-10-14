@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, Depends, Query
 from bson import ObjectId
 from typing import Optional
 from models import TestCreate, TestUpdate, SubmitTestInput, now_iso
-from auth import get_current_user, require_role
+from auth import require_premium, require_role
 import logging
 
 logger = logging.getLogger(__name__)
@@ -93,7 +93,7 @@ async def list_tests(
     start_to: Optional[str] = None,
     limit: int = Query(50, le=200),
     skip: int = Query(0, ge=0),
-    user=Depends(get_current_user),
+    user=Depends(require_premium),
 ):
     from server import db
     q: dict = {}
@@ -143,7 +143,7 @@ async def list_tests(
 
 
 @router.get("/upcoming")
-async def upcoming(user=Depends(get_current_user)):
+async def upcoming(user=Depends(require_premium)):
     from server import db
     today = datetime.now(timezone.utc).date().isoformat()
     q: dict = {"is_published": True, "scheduled_date": {"$gte": today}}
@@ -157,7 +157,7 @@ async def upcoming(user=Depends(get_current_user)):
 async def my_results(
     limit: int = Query(20, le=100),
     skip: int = Query(0, ge=0),
-    user=Depends(get_current_user),
+    user=Depends(require_premium),
 ):
     """All submitted test attempts for the current user, with test titles."""
     from server import db
@@ -179,7 +179,7 @@ async def my_results(
 
 
 @router.get("/{tid}")
-async def get_test(tid: str, user=Depends(get_current_user)):
+async def get_test(tid: str, user=Depends(require_premium)):
     from server import db
     oid = _safe_oid(tid, "test ID")
     t = await db.tests.find_one({"_id": oid})
@@ -195,7 +195,7 @@ async def get_test(tid: str, user=Depends(get_current_user)):
 
 
 @router.post("/{tid}/start")
-async def start_test(tid: str, user=Depends(get_current_user)):
+async def start_test(tid: str, user=Depends(require_premium)):
     """Start / resume a test attempt. Returns questions (without correct answers) and remaining time."""
     from server import db
     oid = _safe_oid(tid, "test ID")
@@ -267,7 +267,7 @@ async def start_test(tid: str, user=Depends(get_current_user)):
 
 
 @router.post("/{tid}/submit")
-async def submit_test(tid: str, body: SubmitTestInput, user=Depends(get_current_user)):
+async def submit_test(tid: str, body: SubmitTestInput, user=Depends(require_premium)):
     from server import db
     oid = _safe_oid(tid, "test ID")
     t = await db.tests.find_one({"_id": oid})
@@ -367,7 +367,7 @@ async def submit_test(tid: str, body: SubmitTestInput, user=Depends(get_current_
 
 
 @router.get("/{tid}/result")
-async def my_result(tid: str, user=Depends(get_current_user)):
+async def my_result(tid: str, user=Depends(require_premium)):
     from server import db
     attempt = await db.test_attempts.find_one({"user_id": user["_id"], "test_id": tid, "submitted_at": {"$ne": None}})
     if not attempt:
@@ -463,7 +463,7 @@ async def delete_test(tid: str, admin=Depends(require_role("admin", "superadmin"
 
 
 @router.get("/{tid}/leaderboard")
-async def test_leaderboard(tid: str, _=Depends(get_current_user)):
+async def test_leaderboard(tid: str, _=Depends(require_premium)):
     from server import db
     cursor = db.test_attempts.find({"test_id": tid, "submitted_at": {"$ne": None}}).sort("score", -1).limit(100)
     out = []

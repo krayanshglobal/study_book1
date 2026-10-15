@@ -277,7 +277,7 @@ class _NavItem extends StatelessWidget {
             Navigator.of(context).pop();
             final target = locked ? '/pricing' : route;
             if (location == target) return;
-            context.go(target);
+            context.push(target);
           },
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
@@ -481,7 +481,9 @@ class AppBottomNavBar extends ConsumerWidget {
     int currentIndex = 0;
     if (path == '/dashboard') {
       currentIndex = 0;
-    } else if (path == '/explorer' || path == '/questions') {
+    } else if (path == '/explorer' ||
+        path == '/questions' ||
+        path == '/daily-practice') {
       currentIndex = 1;
     } else if (path == '/tests') {
       currentIndex = 2;
@@ -550,7 +552,7 @@ class AppBottomNavBar extends ConsumerWidget {
                   child: InkWell(
                     onTap: () {
                       if (path != item.route) {
-                        context.go(item.route);
+                        context.push(item.route);
                       }
                     },
                     splashColor: AppColors.blue.withAlpha(20),

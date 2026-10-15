@@ -103,6 +103,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           loc == '/forgot-password';
       final bool isPremiumSection = loc == '/explorer' ||
           loc == '/questions' ||
+          loc == '/daily-practice' ||
           loc == '/tests' ||
           loc == '/videos' ||
           loc == '/leaderboard' ||
@@ -209,7 +210,7 @@ final routerProvider = Provider<GoRouter>((ref) {
             ],
           ),
 
-          // Branch 1: Explore (Study Explorer & Question Bank)
+          // Branch 1: Explore (Study Explorer, Question Bank & Daily Practice)
           StatefulShellBranch(
             routes: [
               GoRoute(
@@ -221,6 +222,12 @@ final routerProvider = Provider<GoRouter>((ref) {
                 path: '/questions',
                 pageBuilder: (context, state) => _buildFadeSlidePage(
                     state: state, child: const QuestionBankScreen()),
+              ),
+              GoRoute(
+                path: '/daily-practice',
+                pageBuilder: (context, state) => _buildFadeSlidePage(
+                    state: state,
+                    child: const QuestionBankScreen(dailyOnly: true)),
               ),
             ],
           ),

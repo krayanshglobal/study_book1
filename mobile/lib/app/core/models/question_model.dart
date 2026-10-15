@@ -52,6 +52,57 @@ class QuestionModel {
   });
 
   factory QuestionModel.fromJson(Map<String, dynamic> json) {
+    final rawOptions = json['options'];
+    final parsedOptions = <QuestionOption>[];
+    if (rawOptions is List) {
+      for (var i = 0; i < rawOptions.length; i++) {
+        final option = rawOptions[i];
+        if (option is Map) {
+          final mapped = Map<String, dynamic>.from(option);
+          final text =
+              (mapped['text'] ?? mapped['value'] ?? '').toString().trim();
+          if (text.isNotEmpty) {
+            parsedOptions.add(QuestionOption(
+              label:
+                  (mapped['label'] ?? String.fromCharCode(65 + i)).toString(),
+              text: text,
+            ));
+          }
+        } else if (option != null && option.toString().trim().isNotEmpty) {
+          parsedOptions.add(QuestionOption(
+            label: String.fromCharCode(65 + i),
+            text: option.toString().trim(),
+          ));
+        }
+      }
+    } else if (rawOptions is Map) {
+      var index = 0;
+      for (final entry in rawOptions.entries) {
+        final text = entry.value?.toString().trim() ?? '';
+        if (text.isNotEmpty) {
+          parsedOptions.add(QuestionOption(
+            label: entry.key.toString().isEmpty
+                ? String.fromCharCode(65 + index)
+                : entry.key.toString(),
+            text: text,
+          ));
+        }
+        index++;
+      }
+    }
+    if (parsedOptions.isEmpty) {
+      for (var i = 0; i < 4; i++) {
+        final text =
+            json['option_${String.fromCharCode(97 + i)}']?.toString().trim() ??
+                '';
+        if (text.isNotEmpty) {
+          parsedOptions.add(QuestionOption(
+            label: String.fromCharCode(65 + i),
+            text: text,
+          ));
+        }
+      }
+    }
     return QuestionModel(
       id: json['_id']?.toString() ?? json['id']?.toString() ?? '',
       subject: json['subject']?.toString() ?? 'maths',
@@ -59,11 +110,7 @@ class QuestionModel {
       topic: json['topic']?.toString() ?? '',
       questionText: json['question_text']?.toString() ?? '',
       qType: json['q_type']?.toString() ?? 'mcq',
-      options: json['options'] != null
-          ? (json['options'] as List)
-              .map((e) => QuestionOption.fromJson(e as Map<String, dynamic>))
-              .toList()
-          : null,
+      options: parsedOptions.isEmpty ? null : parsedOptions,
       correctIndex: (json['correct_index'] as num?)?.toInt(),
       correctAnswerText: json['correct_answer_text']?.toString(),
       explanation: json['explanation']?.toString(),

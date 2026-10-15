@@ -65,7 +65,7 @@ class _MyAnalyticsScreenState extends ConsumerState<MyAnalyticsScreen>
       final r = await dioClient.get(ApiEndpoints.studentAnalytics);
       if (mounted) {
         setState(() {
-          _data = r.data as Map;
+          _data = r.data is Map ? Map<String, dynamic>.from(r.data as Map) : {};
           _loading = false;
         });
       }
@@ -110,6 +110,27 @@ class _MyAnalyticsScreenState extends ConsumerState<MyAnalyticsScreen>
     }
   }
 
+  int _asInt(dynamic value) {
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  double _asPercent(dynamic value) {
+    final parsed = value is num
+        ? value.toDouble()
+        : double.tryParse(value?.toString() ?? '') ?? 0.0;
+    if (!parsed.isFinite) return 0.0;
+    return parsed.clamp(0.0, 100.0).toDouble();
+  }
+
+  List<Map<String, dynamic>> _asMapList(dynamic value) {
+    if (value is! List) return const [];
+    return value
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(authProvider).user;
@@ -124,15 +145,16 @@ class _MyAnalyticsScreenState extends ConsumerState<MyAnalyticsScreen>
       );
     }
 
-    final data = _data ?? {
-      'overall_accuracy': 75.0,
-      'total_attempts': 14,
-      'total_points': 420,
-      'strengths': [],
-      'weaknesses': [],
-      'recent_scores': [],
-      'topics': [],
-    };
+    final data = _data ??
+        {
+          'overall_accuracy': 75.0,
+          'total_attempts': 14,
+          'total_points': 420,
+          'strengths': [],
+          'weaknesses': [],
+          'recent_scores': [],
+          'topics': [],
+        };
 
     final Widget analyticsContent = _buildAnalyticsBody(user, data);
 
@@ -172,7 +194,8 @@ class _MyAnalyticsScreenState extends ConsumerState<MyAnalyticsScreen>
             Positioned.fill(
               child: Center(
                 child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
                   child: FadeTransition(
                     opacity: _fadeAnim,
                     child: ScaleTransition(
@@ -190,7 +213,8 @@ class _MyAnalyticsScreenState extends ConsumerState<MyAnalyticsScreen>
                               offset: const Offset(0, 10),
                             ),
                           ],
-                          border: Border.all(color: AppColors.slate200.withAlpha(120)),
+                          border: Border.all(
+                              color: AppColors.slate200.withAlpha(120)),
                         ),
                         padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
                         child: Column(
@@ -224,7 +248,8 @@ class _MyAnalyticsScreenState extends ConsumerState<MyAnalyticsScreen>
                               width: 56,
                               height: 56,
                               decoration: BoxDecoration(
-                                color: const Color(0xFFFEF3C7), // Light gold/yellow background
+                                color: const Color(
+                                    0xFFFEF3C7), // Light gold/yellow background
                                 borderRadius: BorderRadius.circular(18),
                               ),
                               child: const Center(
@@ -251,9 +276,11 @@ class _MyAnalyticsScreenState extends ConsumerState<MyAnalyticsScreen>
 
                             // Badge: PREMIUM SUBSCRIPTION REQUIRED
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 5),
                               decoration: BoxDecoration(
-                                color: const Color(0xFFF3E8FF), // Light purple badge
+                                color: const Color(
+                                    0xFFF3E8FF), // Light purple badge
                                 borderRadius: BorderRadius.circular(99),
                               ),
                               child: Text(
@@ -285,13 +312,18 @@ class _MyAnalyticsScreenState extends ConsumerState<MyAnalyticsScreen>
                             // Feature list
                             const Column(
                               children: [
-                                _FeatureBulletItem(label: 'Average Accuracy Breakdown'),
+                                _FeatureBulletItem(
+                                    label: 'Average Accuracy Breakdown'),
                                 SizedBox(height: 10),
-                                _FeatureBulletItem(label: 'Performance Percentile Comparison'),
+                                _FeatureBulletItem(
+                                    label: 'Performance Percentile Comparison'),
                                 SizedBox(height: 10),
-                                _FeatureBulletItem(label: 'Mock Test Score Trend'),
+                                _FeatureBulletItem(
+                                    label: 'Mock Test Score Trend'),
                                 SizedBox(height: 10),
-                                _FeatureBulletItem(label: 'Detailed Strength & Weakness Analysis'),
+                                _FeatureBulletItem(
+                                    label:
+                                        'Detailed Strength & Weakness Analysis'),
                               ],
                             ),
                             const SizedBox(height: 24),
@@ -305,13 +337,16 @@ class _MyAnalyticsScreenState extends ConsumerState<MyAnalyticsScreen>
                                 splashColor: Colors.white10,
                                 child: Container(
                                   width: double.infinity,
-                                  padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                                  padding: const EdgeInsets.symmetric(
+                                      vertical: 14, horizontal: 16),
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFF0F172A), // Dark navy button matching web reference
+                                    color: const Color(
+                                        0xFF0F172A), // Dark navy button matching web reference
                                     borderRadius: BorderRadius.circular(99),
                                     boxShadow: [
                                       BoxShadow(
-                                        color: const Color(0xFF0F172A).withAlpha(51),
+                                        color: const Color(0xFF0F172A)
+                                            .withAlpha(51),
                                         blurRadius: 10,
                                         offset: const Offset(0, 4),
                                       ),
@@ -364,7 +399,8 @@ class _MyAnalyticsScreenState extends ConsumerState<MyAnalyticsScreen>
                     },
                     borderRadius: BorderRadius.circular(99),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 12),
                       decoration: BoxDecoration(
                         color: const Color(0xFF7C3AED),
                         borderRadius: BorderRadius.circular(99),
@@ -379,7 +415,8 @@ class _MyAnalyticsScreenState extends ConsumerState<MyAnalyticsScreen>
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(Icons.lock_rounded, color: Colors.white, size: 16),
+                          const Icon(Icons.lock_rounded,
+                              color: Colors.white, size: 16),
                           const SizedBox(width: 8),
                           Text(
                             'Unlock Premium Analytics',
@@ -402,13 +439,13 @@ class _MyAnalyticsScreenState extends ConsumerState<MyAnalyticsScreen>
   }
 
   Widget _buildAnalyticsBody(user, Map data) {
-    final double overall = (data['overall_accuracy'] as num?)?.toDouble() ?? 0.0;
-    final int totalAttempts = data['total_attempts'] ?? 0;
-    final int totalPoints = data['total_points'] ?? 0;
-    final List strengths = data['strengths'] ?? [];
-    final List weaknesses = data['weaknesses'] ?? [];
-    final List recentScores = data['recent_scores'] ?? [];
-    final List topics = data['topics'] ?? [];
+    final double overall = _asPercent(data['overall_accuracy']);
+    final int totalAttempts = _asInt(data['total_attempts']);
+    final int totalPoints = _asInt(data['total_points']);
+    final strengths = _asMapList(data['strengths']);
+    final weaknesses = _asMapList(data['weaknesses']);
+    final recentScores = _asMapList(data['recent_scores']);
+    final topics = _asMapList(data['topics']);
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
@@ -423,10 +460,18 @@ class _MyAnalyticsScreenState extends ConsumerState<MyAnalyticsScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text('YOUR JOURNEY',
-                        style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 2, color: AppColors.violet)),
+                        style: GoogleFonts.inter(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 2,
+                            color: AppColors.violet)),
                     const SizedBox(height: 2),
-                    Text('Hey ${user?.name.split(' ').first ?? 'Student'}, here\'s your performance',
-                        style: GoogleFonts.fraunces(fontSize: 22, fontWeight: FontWeight.w600, color: AppColors.navy)),
+                    Text(
+                        'Hey ${user?.name.split(' ').first ?? 'Student'}, here\'s your performance',
+                        style: GoogleFonts.fraunces(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.navy)),
                   ],
                 ),
               ),
@@ -455,7 +500,12 @@ class _MyAnalyticsScreenState extends ConsumerState<MyAnalyticsScreen>
                   ),
                   child: Column(
                     children: [
-                      Text('OVERALL ACCURACY', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1.5, color: AppColors.blue)),
+                      Text('OVERALL ACCURACY',
+                          style: GoogleFonts.inter(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 1.5,
+                              color: AppColors.blue)),
                       const SizedBox(height: 12),
                       SizedBox(
                         height: 100,
@@ -469,7 +519,11 @@ class _MyAnalyticsScreenState extends ConsumerState<MyAnalyticsScreen>
                                 sections: [
                                   PieChartSectionData(
                                     value: overall,
-                                    color: overall >= 75 ? AppColors.success : overall >= 50 ? AppColors.violet : AppColors.error,
+                                    color: overall >= 75
+                                        ? AppColors.success
+                                        : overall >= 50
+                                            ? AppColors.violet
+                                            : AppColors.error,
                                     radius: 12,
                                     showTitle: false,
                                   ),
@@ -484,7 +538,10 @@ class _MyAnalyticsScreenState extends ConsumerState<MyAnalyticsScreen>
                             ),
                             Center(
                               child: Text('$overall%',
-                                  style: GoogleFonts.fraunces(fontSize: 22, fontWeight: FontWeight.w700, color: AppColors.navy)),
+                                  style: GoogleFonts.fraunces(
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.navy)),
                             ),
                           ],
                         ),
@@ -509,26 +566,41 @@ class _MyAnalyticsScreenState extends ConsumerState<MyAnalyticsScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('RECENT TESTS', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1.5, color: AppColors.violet)),
+                  Text('RECENT TESTS',
+                      style: GoogleFonts.inter(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 1.5,
+                          color: AppColors.violet)),
                   const SizedBox(height: 4),
-                  Text('Score trend', style: GoogleFonts.fraunces(fontSize: 20, fontWeight: FontWeight.w600, color: AppColors.navy)),
+                  Text('Score trend',
+                      style: GoogleFonts.fraunces(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.navy)),
                   const SizedBox(height: 16),
                   SizedBox(
                     height: 160,
                     child: LineChart(
                       LineChartData(
-                        gridData: const FlGridData(show: true, drawVerticalLine: false),
+                        gridData: const FlGridData(
+                            show: true, drawVerticalLine: false),
                         titlesData: const FlTitlesData(
-                          leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 30)),
-                          bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                          rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                          topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                          leftTitles: AxisTitles(
+                              sideTitles: SideTitles(
+                                  showTitles: true, reservedSize: 30)),
+                          bottomTitles: AxisTitles(
+                              sideTitles: SideTitles(showTitles: false)),
+                          rightTitles: AxisTitles(
+                              sideTitles: SideTitles(showTitles: false)),
+                          topTitles: AxisTitles(
+                              sideTitles: SideTitles(showTitles: false)),
                         ),
                         borderData: FlBorderData(show: false),
                         lineBarsData: [
                           LineChartBarData(
                             spots: recentScores.asMap().entries.map((e) {
-                              final double y = (e.value['percent'] as num?)?.toDouble() ?? 0.0;
+                              final double y = _asPercent(e.value['percent']);
                               return FlSpot(e.key.toDouble(), y);
                             }).toList(),
                             isCurved: true,
@@ -561,17 +633,31 @@ class _MyAnalyticsScreenState extends ConsumerState<MyAnalyticsScreen>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('STRENGTHS', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w700, color: AppColors.success)),
+                      Text('STRENGTHS',
+                          style: GoogleFonts.inter(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.success)),
                       const SizedBox(height: 8),
                       if (strengths.isEmpty)
-                        Text('Keep practising! >70% shows here.', style: GoogleFonts.inter(fontSize: 12, color: AppColors.slate500))
+                        Text('Keep practising! >70% shows here.',
+                            style: GoogleFonts.inter(
+                                fontSize: 12, color: AppColors.slate500))
                       else
                         ...strengths.map((s) => Padding(
                               padding: const EdgeInsets.only(bottom: 6),
                               child: Row(
                                 children: [
-                                  Expanded(child: Text('${s['topic']}', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w500))),
-                                  Text('${s['accuracy']}%', style: GoogleFonts.jetBrainsMono(fontSize: 12, color: AppColors.success, fontWeight: FontWeight.w600)),
+                                  Expanded(
+                                      child: Text('${s['topic']}',
+                                          style: GoogleFonts.inter(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w500))),
+                                  Text('${s['accuracy']}%',
+                                      style: GoogleFonts.jetBrainsMono(
+                                          fontSize: 12,
+                                          color: AppColors.success,
+                                          fontWeight: FontWeight.w600)),
                                 ],
                               ),
                             )),
@@ -591,17 +677,31 @@ class _MyAnalyticsScreenState extends ConsumerState<MyAnalyticsScreen>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('WEAKNESSES', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w700, color: AppColors.error)),
+                      Text('WEAKNESSES',
+                          style: GoogleFonts.inter(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.error)),
                       const SizedBox(height: 8),
                       if (weaknesses.isEmpty)
-                        Text('Nothing below 60%. Great job! 🔥', style: GoogleFonts.inter(fontSize: 12, color: AppColors.slate500))
+                        Text('Nothing below 60%. Great job! 🔥',
+                            style: GoogleFonts.inter(
+                                fontSize: 12, color: AppColors.slate500))
                       else
                         ...weaknesses.map((w) => Padding(
                               padding: const EdgeInsets.only(bottom: 6),
                               child: Row(
                                 children: [
-                                  Expanded(child: Text('${w['topic']}', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w500))),
-                                  Text('${w['accuracy']}%', style: GoogleFonts.jetBrainsMono(fontSize: 12, color: AppColors.error, fontWeight: FontWeight.w600)),
+                                  Expanded(
+                                      child: Text('${w['topic']}',
+                                          style: GoogleFonts.inter(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w500))),
+                                  Text('${w['accuracy']}%',
+                                      style: GoogleFonts.jetBrainsMono(
+                                          fontSize: 12,
+                                          color: AppColors.error,
+                                          fontWeight: FontWeight.w600)),
                                 ],
                               ),
                             )),
@@ -625,9 +725,18 @@ class _MyAnalyticsScreenState extends ConsumerState<MyAnalyticsScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('EVERY TOPIC', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1.5, color: AppColors.blue)),
+                  Text('EVERY TOPIC',
+                      style: GoogleFonts.inter(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 1.5,
+                          color: AppColors.blue)),
                   const SizedBox(height: 4),
-                  Text('Accuracy per topic', style: GoogleFonts.fraunces(fontSize: 20, fontWeight: FontWeight.w600, color: AppColors.navy)),
+                  Text('Accuracy per topic',
+                      style: GoogleFonts.fraunces(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.navy)),
                   const SizedBox(height: 16),
                   SizedBox(
                     height: 180,
@@ -638,22 +747,32 @@ class _MyAnalyticsScreenState extends ConsumerState<MyAnalyticsScreen>
                         barTouchData: BarTouchData(enabled: true),
                         titlesData: const FlTitlesData(
                           show: true,
-                          bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                          leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 30)),
-                          topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                          rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                          bottomTitles: AxisTitles(
+                              sideTitles: SideTitles(showTitles: false)),
+                          leftTitles: AxisTitles(
+                              sideTitles: SideTitles(
+                                  showTitles: true, reservedSize: 30)),
+                          topTitles: AxisTitles(
+                              sideTitles: SideTitles(showTitles: false)),
+                          rightTitles: AxisTitles(
+                              sideTitles: SideTitles(showTitles: false)),
                         ),
                         borderData: FlBorderData(show: false),
                         barGroups: topics.asMap().entries.map((e) {
-                          final double acc = (e.value['accuracy'] as num?)?.toDouble() ?? 0.0;
+                          final double acc = _asPercent(e.value['accuracy']);
                           return BarChartGroupData(
                             x: e.key,
                             barRods: [
                               BarChartRodData(
                                 toY: acc,
-                                color: acc >= 70 ? AppColors.success : acc >= 50 ? AppColors.blue : AppColors.error,
+                                color: acc >= 70
+                                    ? AppColors.success
+                                    : acc >= 50
+                                        ? AppColors.blue
+                                        : AppColors.error,
                                 width: 14,
-                                borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+                                borderRadius: const BorderRadius.vertical(
+                                    top: Radius.circular(4)),
                               ),
                             ],
                           );
@@ -677,7 +796,11 @@ class _MyAnalyticsScreenState extends ConsumerState<MyAnalyticsScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Keep the streak going.', style: GoogleFonts.fraunces(fontSize: 20, fontWeight: FontWeight.w600, color: Colors.white)),
+                Text('Keep the streak going.',
+                    style: GoogleFonts.fraunces(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white)),
                 const SizedBox(height: 6),
                 Text(
                   overall >= 75
@@ -743,8 +866,9 @@ class _Chip extends StatelessWidget {
         borderRadius: BorderRadius.circular(99),
         border: Border.all(color: color.withAlpha(50)),
       ),
-      child: Text(label, style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: color)),
+      child: Text(label,
+          style: GoogleFonts.inter(
+              fontSize: 11, fontWeight: FontWeight.w600, color: color)),
     );
   }
 }
-

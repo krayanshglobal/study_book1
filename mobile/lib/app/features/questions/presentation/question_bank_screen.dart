@@ -12,7 +12,9 @@ import '../../common/widgets/app_drawer.dart';
 import '../../common/widgets/shared_widgets.dart';
 
 class QuestionBankScreen extends ConsumerStatefulWidget {
-  const QuestionBankScreen({super.key});
+  final bool dailyOnly;
+
+  const QuestionBankScreen({super.key, this.dailyOnly = false});
 
   @override
   ConsumerState<QuestionBankScreen> createState() => _QuestionBankState();
@@ -56,9 +58,15 @@ class _QuestionBankState extends ConsumerState<QuestionBankScreen> {
 
   Future<void> _loadTopics() async {
     try {
-      final r = await dioClient.get(ApiEndpoints.topics,
-          queryParameters: _filterClass != null ? {'class_level': _filterClass} : null);
-      if (mounted) setState(() => _topics = List<Map>.from(r.data['topics'] ?? []));
+      final params = <String, dynamic>{
+        'category': widget.dailyOnly ? 'daily_24h' : 'question_bank',
+      };
+      if (_filterClass != null) params['class_level'] = _filterClass;
+      final r =
+          await dioClient.get(ApiEndpoints.topics, queryParameters: params);
+      if (mounted) {
+        setState(() => _topics = List<Map>.from(r.data['topics'] ?? []));
+      }
     } catch (_) {}
   }
 
@@ -73,11 +81,17 @@ class _QuestionBankState extends ConsumerState<QuestionBankScreen> {
     setState(() => _loading = true);
     try {
       final params = <String, dynamic>{'limit': 20, 'skip': _skip};
+      params['category'] = widget.dailyOnly ? 'daily_24h' : 'question_bank';
       if (_filterClass != null) params['class_level'] = _filterClass;
       if (_filterTopic != null) params['topic'] = _filterTopic;
-      if (_filterDate != null) params['date'] = DateFormat('yyyy-MM-dd').format(_filterDate!);
-      final r = await dioClient.get(ApiEndpoints.questions, queryParameters: params);
-      final items = (r.data['items'] as List).map((e) => QuestionModel.fromJson(e)).toList();
+      if (_filterDate != null) {
+        params['date'] = DateFormat('yyyy-MM-dd').format(_filterDate!);
+      }
+      final r =
+          await dioClient.get(ApiEndpoints.questions, queryParameters: params);
+      final items = (r.data['items'] as List)
+          .map((e) => QuestionModel.fromJson(e))
+          .toList();
       if (!mounted) return;
       setState(() {
         if (reset) {
@@ -120,15 +134,19 @@ class _QuestionBankState extends ConsumerState<QuestionBankScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final hasActiveFilters = _filterClass != null || _filterTopic != null || _filterDate != null;
+    final hasActiveFilters =
+        _filterClass != null || _filterTopic != null || _filterDate != null;
 
     // Compute stats from currently loaded questions
     final totalLoaded = _questions.length;
-    final answered = _questions.where((q) => _answeredIds.contains(q.id)).length;
+    final answered =
+        _questions.where((q) => _answeredIds.contains(q.id)).length;
     final unanswered = totalLoaded - answered;
 
     return MainScaffold(
-      title: 'Question Bank',
+      title: widget.dailyOnly ? 'Daily Practice' : 'Question Bank',
+      showBack: widget.dailyOnly,
+      parentRoute: '/dashboard',
       body: Column(
         children: [
           // Filters
@@ -139,72 +157,95 @@ class _QuestionBankState extends ConsumerState<QuestionBankScreen> {
               children: [
                 Row(
                   children: [
-                // ── Class selector: read-only pill for students, dropdown for admins
-                if (_isStudent)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: AppColors.blue.withAlpha(10),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: AppColors.blue.withAlpha(40)),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.school_rounded, size: 14, color: AppColors.blue),
-                        const SizedBox(width: 6),
-                        Text(
-                          'Class $_filterClass',
-                          style: GoogleFonts.inter(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.blue,
-                          ),
+                    // ── Class selector: read-only pill for students, dropdown for admins
+                    if (_isStudent)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: AppColors.blue.withAlpha(10),
+                          borderRadius: BorderRadius.circular(10),
+                          border:
+                              Border.all(color: AppColors.blue.withAlpha(40)),
                         ),
-                      ],
-                    ),
-                  )
-                else
-                  Expanded(
-                    child: DropdownButtonFormField<String>(
-                      value: _filterClass,
-                      isExpanded: true,
-                      decoration: InputDecoration(
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
-                            borderSide: const BorderSide(color: AppColors.slate200)),
-                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
-                            borderSide: const BorderSide(color: AppColors.slate200)),
-                        isDense: true,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.school_rounded,
+                                size: 14, color: AppColors.blue),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Class $_filterClass',
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.blue,
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    else
+                      Expanded(
+                        child: DropdownButtonFormField<String>(
+                          value: _filterClass,
+                          isExpanded: true,
+                          decoration: InputDecoration(
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 8),
+                            border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                                borderSide: const BorderSide(
+                                    color: AppColors.slate200)),
+                            enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                                borderSide: const BorderSide(
+                                    color: AppColors.slate200)),
+                            isDense: true,
+                          ),
+                          hint: Text('Class',
+                              style: GoogleFonts.inter(
+                                  fontSize: 13, color: AppColors.slate400)),
+                          items: [
+                            const DropdownMenuItem(
+                                value: null, child: Text('All classes')),
+                            ..._classes.map((c) => DropdownMenuItem(
+                                value: c, child: Text('Class $c'))),
+                          ],
+                          onChanged: (v) {
+                            setState(() {
+                              _filterClass = v;
+                              _filterTopic = null;
+                            });
+                            _loadTopics();
+                            _load(reset: true);
+                          },
+                        ),
                       ),
-                      hint: Text('Class', style: GoogleFonts.inter(fontSize: 13, color: AppColors.slate400)),
-                      items: [
-                        const DropdownMenuItem(value: null, child: Text('All classes')),
-                        ..._classes.map((c) => DropdownMenuItem(value: c, child: Text('Class $c'))),
-                      ],
-                      onChanged: (v) {
-                        setState(() { _filterClass = v; _filterTopic = null; });
-                        _loadTopics();
-                        _load(reset: true);
-                      },
-                    ),
-                  ),
                     const SizedBox(width: 10),
                     Expanded(
                       child: DropdownButtonFormField<String>(
                         value: _filterTopic,
                         isExpanded: true,
                         decoration: InputDecoration(
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
-                              borderSide: const BorderSide(color: AppColors.slate200)),
-                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
-                              borderSide: const BorderSide(color: AppColors.slate200)),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 8),
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide:
+                                  const BorderSide(color: AppColors.slate200)),
+                          enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide:
+                                  const BorderSide(color: AppColors.slate200)),
                           isDense: true,
                         ),
-                        hint: Text('Topic', style: GoogleFonts.inter(fontSize: 13, color: AppColors.slate400)),
+                        hint: Text('Topic',
+                            style: GoogleFonts.inter(
+                                fontSize: 13, color: AppColors.slate400)),
                         items: [
-                          const DropdownMenuItem(value: null, child: Text('All topics')),
+                          const DropdownMenuItem(
+                              value: null, child: Text('All topics')),
                           ..._topics.map((t) => DropdownMenuItem(
                               value: t['topic'] as String,
                               child: Text(t['topic'] as String))),
@@ -225,26 +266,40 @@ class _QuestionBankState extends ConsumerState<QuestionBankScreen> {
                         onTap: _pickDate,
                         borderRadius: BorderRadius.circular(10),
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 10),
                           decoration: BoxDecoration(
                             color: AppColors.white,
                             borderRadius: BorderRadius.circular(10),
                             border: Border.all(
-                              color: _filterDate != null ? AppColors.blue : AppColors.slate200,
+                              color: _filterDate != null
+                                  ? AppColors.blue
+                                  : AppColors.slate200,
                               width: _filterDate != null ? 1.5 : 1.0,
                             ),
                           ),
                           child: Row(
                             children: [
-                              Icon(Icons.calendar_today, size: 16, color: _filterDate != null ? AppColors.blue : AppColors.slate400),
+                              Icon(Icons.calendar_today,
+                                  size: 16,
+                                  color: _filterDate != null
+                                      ? AppColors.blue
+                                      : AppColors.slate400),
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
-                                  _filterDate != null ? DateFormat('dd MMM yyyy').format(_filterDate!) : 'Date 📅',
+                                  _filterDate != null
+                                      ? DateFormat('dd MMM yyyy')
+                                          .format(_filterDate!)
+                                      : 'Date 📅',
                                   style: GoogleFonts.inter(
                                     fontSize: 13,
-                                    color: _filterDate != null ? AppColors.navy : AppColors.slate400,
-                                    fontWeight: _filterDate != null ? FontWeight.w600 : FontWeight.normal,
+                                    color: _filterDate != null
+                                        ? AppColors.navy
+                                        : AppColors.slate400,
+                                    fontWeight: _filterDate != null
+                                        ? FontWeight.w600
+                                        : FontWeight.normal,
                                   ),
                                   overflow: TextOverflow.ellipsis,
                                 ),
@@ -255,7 +310,8 @@ class _QuestionBankState extends ConsumerState<QuestionBankScreen> {
                                     setState(() => _filterDate = null);
                                     _load(reset: true);
                                   },
-                                  child: const Icon(Icons.close, size: 16, color: AppColors.slate500),
+                                  child: const Icon(Icons.close,
+                                      size: 16, color: AppColors.slate500),
                                 ),
                             ],
                           ),
@@ -266,8 +322,11 @@ class _QuestionBankState extends ConsumerState<QuestionBankScreen> {
                       const SizedBox(width: 10),
                       TextButton.icon(
                         onPressed: _resetFilters,
-                        icon: const Icon(Icons.restart_alt, size: 16, color: AppColors.slate600),
-                        label: Text('Clear', style: GoogleFonts.inter(fontSize: 13, color: AppColors.slate600)),
+                        icon: const Icon(Icons.restart_alt,
+                            size: 16, color: AppColors.slate600),
+                        label: Text('Clear',
+                            style: GoogleFonts.inter(
+                                fontSize: 13, color: AppColors.slate600)),
                       ),
                     ],
                   ],
@@ -320,7 +379,12 @@ class _QuestionBankState extends ConsumerState<QuestionBankScreen> {
             child: _loading && _questions.isEmpty
                 ? const LoadingIndicator()
                 : _questions.isEmpty
-                    ? const EmptyState(message: 'No questions found.', icon: Icons.quiz_outlined)
+                    ? EmptyState(
+                        message: widget.dailyOnly
+                            ? 'No active Daily Practice questions. New questions will appear when your admin publishes them.'
+                            : 'No questions found.',
+                        icon: Icons.quiz_outlined,
+                      )
                     : ListView.builder(
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                         itemCount: _questions.length + 1,
@@ -336,7 +400,8 @@ class _QuestionBankState extends ConsumerState<QuestionBankScreen> {
                                           _load();
                                         },
                                         child: Text('Load more',
-                                            style: GoogleFonts.inter(color: AppColors.blue)),
+                                            style: GoogleFonts.inter(
+                                                color: AppColors.blue)),
                                       ),
                                     ),
                                   )
@@ -441,9 +506,13 @@ class _QuestionCardState extends State<_QuestionCard> {
       final body = widget.question.qType == 'mcq'
           ? {'selected_index': _selectedIndex}
           : {'typed_answer': _typedAnswer};
-      final r = await dioClient.post(ApiEndpoints.checkQuestion(widget.question.id), data: body);
+      final r = await dioClient
+          .post(ApiEndpoints.checkQuestion(widget.question.id), data: body);
       if (mounted) {
-        setState(() { _result = r.data as Map; _submitting = false; });
+        setState(() {
+          _result = r.data as Map;
+          _submitting = false;
+        });
         // Notify parent so statistics update immediately
         widget.onAnswered();
       }
@@ -452,7 +521,11 @@ class _QuestionCardState extends State<_QuestionCard> {
     }
   }
 
-  Color _difficultyColor(String d) => d == 'easy' ? AppColors.success : d == 'hard' ? AppColors.error : AppColors.warning;
+  Color _difficultyColor(String d) => d == 'easy'
+      ? AppColors.success
+      : d == 'hard'
+          ? AppColors.error
+          : AppColors.warning;
 
   @override
   Widget build(BuildContext context) {
@@ -480,11 +553,14 @@ class _QuestionCardState extends State<_QuestionCard> {
               ],
             ),
             const SizedBox(height: 12),
-            Text(q.questionText, style: GoogleFonts.inter(fontSize: 14, color: AppColors.navy)),
+            Text(q.questionText,
+                style: GoogleFonts.inter(fontSize: 14, color: AppColors.navy)),
             const SizedBox(height: 12),
 
             // MCQ options
-            if (q.qType == 'mcq' && q.options != null) ...[
+            if (q.qType == 'mcq' &&
+                q.options != null &&
+                q.options!.isNotEmpty) ...[
               ...q.options!.asMap().entries.map((e) {
                 final idx = e.key;
                 final opt = e.value;
@@ -493,15 +569,23 @@ class _QuestionCardState extends State<_QuestionCard> {
                 if (_result != null) {
                   final correctIdx = _result!['correct_index'];
                   if (idx == correctIdx) bg = AppColors.success.withAlpha(30);
-                  if (isSelected && idx != correctIdx) bg = AppColors.error.withAlpha(30);
+                  if (isSelected && idx != correctIdx) {
+                    bg = AppColors.error.withAlpha(30);
+                  }
                 }
                 return GestureDetector(
-                  onTap: _result == null ? () => setState(() => _selectedIndex = idx) : null,
+                  onTap: _result == null
+                      ? () => setState(() => _selectedIndex = idx)
+                      : null,
                   child: Container(
                     margin: const EdgeInsets.only(bottom: 8),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
                     decoration: BoxDecoration(
-                      color: bg ?? (isSelected ? AppColors.blue.withAlpha(15) : AppColors.slate50),
+                      color: bg ??
+                          (isSelected
+                              ? AppColors.blue.withAlpha(15)
+                              : AppColors.slate50),
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(
                         color: isSelected ? AppColors.blue : AppColors.slate200,
@@ -511,27 +595,51 @@ class _QuestionCardState extends State<_QuestionCard> {
                     child: Row(
                       children: [
                         Container(
-                          width: 24, height: 24,
+                          width: 24,
+                          height: 24,
                           decoration: BoxDecoration(
-                            color: isSelected ? AppColors.blue : AppColors.slate200,
+                            color: isSelected
+                                ? AppColors.blue
+                                : AppColors.slate200,
                             shape: BoxShape.circle,
                           ),
                           child: Center(
                             child: Text(opt.label,
                                 style: GoogleFonts.inter(
-                                    fontSize: 11, fontWeight: FontWeight.w700,
-                                    color: isSelected ? Colors.white : AppColors.slate700)),
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: isSelected
+                                        ? Colors.white
+                                        : AppColors.slate700)),
                           ),
                         ),
                         const SizedBox(width: 10),
-                        Expanded(child: Text(opt.text,
-                            style: GoogleFonts.inter(fontSize: 13, color: AppColors.navy))),
+                        Expanded(
+                            child: Text(opt.text,
+                                style: GoogleFonts.inter(
+                                    fontSize: 13, color: AppColors.navy))),
                       ],
                     ),
                   ),
                 );
               }),
             ],
+
+            if (q.qType == 'mcq' && (q.options == null || q.options!.isEmpty))
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.warning.withAlpha(15),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AppColors.warning.withAlpha(50)),
+                ),
+                child: Text(
+                  'Answer options are unavailable for this question. Please ask the administrator to edit and republish it.',
+                  style: GoogleFonts.inter(
+                      fontSize: 12, color: AppColors.slate700),
+                ),
+              ),
 
             // Typed input
             if (q.qType == 'typed') ...[
@@ -540,11 +648,15 @@ class _QuestionCardState extends State<_QuestionCard> {
                 onChanged: (v) => setState(() => _typedAnswer = v),
                 decoration: InputDecoration(
                   hintText: 'Type your answer here',
-                  hintStyle: GoogleFonts.inter(color: AppColors.slate400, fontSize: 13),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                  hintStyle: GoogleFonts.inter(
+                      color: AppColors.slate400, fontSize: 13),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
                       borderSide: const BorderSide(color: AppColors.slate200)),
-                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
+                  enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
                       borderSide: const BorderSide(color: AppColors.slate200)),
                 ),
               ),
@@ -556,26 +668,41 @@ class _QuestionCardState extends State<_QuestionCard> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: (_result!['correct'] == true ? AppColors.success : AppColors.error).withAlpha(15),
+                  color: (_result!['correct'] == true
+                          ? AppColors.success
+                          : AppColors.error)
+                      .withAlpha(15),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(children: [
-                      Icon(_result!['correct'] == true ? Icons.check_circle : Icons.cancel,
+                      Icon(
+                          _result!['correct'] == true
+                              ? Icons.check_circle
+                              : Icons.cancel,
                           size: 16,
-                          color: _result!['correct'] == true ? AppColors.success : AppColors.error),
+                          color: _result!['correct'] == true
+                              ? AppColors.success
+                              : AppColors.error),
                       const SizedBox(width: 6),
-                      Text(_result!['correct'] == true ? 'Correct!' : 'Incorrect',
+                      Text(
+                          _result!['correct'] == true
+                              ? 'Correct!'
+                              : 'Incorrect',
                           style: GoogleFonts.inter(
-                              fontWeight: FontWeight.w700, fontSize: 13,
-                              color: _result!['correct'] == true ? AppColors.success : AppColors.error)),
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13,
+                              color: _result!['correct'] == true
+                                  ? AppColors.success
+                                  : AppColors.error)),
                     ]),
                     if (_result!['explanation'] != null) ...[
                       const SizedBox(height: 6),
                       Text('${_result!['explanation']}',
-                          style: GoogleFonts.inter(fontSize: 12, color: AppColors.slate700)),
+                          style: GoogleFonts.inter(
+                              fontSize: 12, color: AppColors.slate700)),
                     ],
                   ],
                 ),
@@ -587,19 +714,28 @@ class _QuestionCardState extends State<_QuestionCard> {
               Align(
                 alignment: Alignment.centerRight,
                 child: ElevatedButton(
-                  onPressed: (q.qType == 'mcq' ? _selectedIndex == null : _typedAnswer.trim().isEmpty) || _submitting
+                  onPressed: (q.qType == 'mcq'
+                              ? _selectedIndex == null
+                              : _typedAnswer.trim().isEmpty) ||
+                          _submitting
                       ? null
                       : _check,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.blue,
-                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(99)),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 18, vertical: 10),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(99)),
                   ),
                   child: _submitting
-                      ? const SizedBox(width: 16, height: 16,
-                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                              color: Colors.white, strokeWidth: 2))
                       : Text('Check answer',
-                          style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600)),
+                          style: GoogleFonts.inter(
+                              fontSize: 12, fontWeight: FontWeight.w600)),
                 ),
               ),
           ],
@@ -623,7 +759,8 @@ class _Badge extends StatelessWidget {
         borderRadius: BorderRadius.circular(6),
       ),
       child: Text(text,
-          style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w600, color: color)),
+          style: GoogleFonts.inter(
+              fontSize: 10, fontWeight: FontWeight.w600, color: color)),
     );
   }
 }

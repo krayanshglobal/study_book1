@@ -285,8 +285,8 @@ class _State extends ConsumerState<StudentDashboardScreen> {
                     // ── 4b. Daily Practice Card ───────────────────────────
                     _DailyPracticeCard(
                       isPremium: isPremium,
-                      onTap: () =>
-                          context.push(isPremium ? '/questions' : '/pricing'),
+                      onTap: () => context
+                          .push(isPremium ? '/daily-practice' : '/pricing'),
                     ),
                     const SizedBox(height: 16),
 

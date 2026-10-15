@@ -11,7 +11,7 @@ from fastapi import HTTPException
 from question_lifecycle import expire_daily_questions
 from models import ContentBulkPremiumInput
 from routers.misc_routes import _rank_test_leaderboard, bulk_content_premium
-from routers.question_routes import get_question, list_questions
+from routers.question_routes import _ser, get_question, list_questions
 from routers.test_routes import _normalise_and_validate_schedule, _parse_scheduled
 
 
@@ -77,6 +77,38 @@ class TestDailyQuestionLifecycle(IsolatedAsyncioTestCase):
         self.assertEqual(db.questions.update["$set"]["category"], "question_bank")
         self.assertTrue(db.questions.update["$set"]["is_published"])
         self.assertNotIn("$delete", db.questions.update)
+
+
+class TestQuestionOptionCompatibility(TestCase):
+    def test_legacy_option_fields_are_exposed_to_practice_clients(self):
+        doc = {
+            "_id": ObjectId(),
+            "q_type": "mcq",
+            "option_a": "One",
+            "option_b": "Two",
+            "option_c": "Three",
+            "option_d": "Four",
+        }
+
+        serialized = _ser(doc)
+
+        self.assertEqual(
+            serialized["options"],
+            [
+                {"label": "A", "text": "One"},
+                {"label": "B", "text": "Two"},
+                {"label": "C", "text": "Three"},
+                {"label": "D", "text": "Four"},
+            ],
+        )
+
+    def test_plain_option_list_is_normalized(self):
+        serialized = _ser({
+            "_id": ObjectId(),
+            "q_type": "mcq",
+            "options": ["First", "Second"],
+        })
+        self.assertEqual(serialized["options"][1], {"label": "B", "text": "Second"})
 
 
 class TestLeaderboardRecalculation(TestCase):

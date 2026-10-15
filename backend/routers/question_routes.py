@@ -22,6 +22,37 @@ router = APIRouter(prefix="/api/questions", tags=["questions"])
 def _ser(q):
     q = dict(q)
     q["_id"] = str(q["_id"])
+    # Normalize legacy MCQ records so every client receives the current
+    # [{label, text}] option shape. Older imports stored option_a..option_d or
+    # a plain list/dictionary, which made practice cards render no choices.
+    if q.get("q_type", "mcq") == "mcq":
+        raw_options = q.get("options")
+        normalized = []
+        labels = ["A", "B", "C", "D"]
+        if isinstance(raw_options, dict):
+            for index, (key, value) in enumerate(raw_options.items()):
+                text = str(value or "").strip()
+                if text:
+                    normalized.append({
+                        "label": str(key or labels[min(index, 3)]).upper(),
+                        "text": text,
+                    })
+        elif isinstance(raw_options, list):
+            for index, option in enumerate(raw_options):
+                if isinstance(option, dict):
+                    text = str(option.get("text") or option.get("value") or "").strip()
+                    label = str(option.get("label") or labels[min(index, 3)]).upper()
+                else:
+                    text = str(option or "").strip()
+                    label = labels[min(index, 3)]
+                if text:
+                    normalized.append({"label": label, "text": text})
+        if not normalized:
+            for label, key in zip(labels, ["option_a", "option_b", "option_c", "option_d"]):
+                text = str(q.get(key) or "").strip()
+                if text:
+                    normalized.append({"label": label, "text": text})
+        q["options"] = normalized
     return q
 
 

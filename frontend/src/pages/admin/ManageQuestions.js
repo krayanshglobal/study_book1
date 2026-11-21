@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import api, { formatApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,7 +15,7 @@ import BackButton from "@/components/BackButton";
 import RichEditor from "@/components/RichEditor";
 
 const emptyQ = {
-  subject: "maths", class_level: "10", topic: "", question_text: "",
+  subject: "maths", class_level: "10", topic: "", question_number: "", question_text: "",
   q_type: "mcq",
   options: [{ label: "A", text: "" }, { label: "B", text: "" }, { label: "C", text: "" }, { label: "D", text: "" }],
   correct_index: 0,
@@ -36,7 +36,8 @@ export default function ManageQuestions() {
 
   // Published & Draft questions list
   const [items, setItems] = useState([]);
-  const [filter, setFilter] = useState({ class_level: adminClass, topic: "", status: "all", difficulty: "all", premium: "all", created_from: "", created_to: "", published_from: "", published_to: "" });
+  const [filter, setFilter] = useState({ class_level: adminClass, topic: "", question_number: "", status: "all", difficulty: "all", premium: "all", created_from: "", created_to: "", published_from: "", published_to: "" });
+  const loadRequestId = useRef(0);
   const [selected, setSelected] = useState([]);
 
   // Batch staging — questions ready to publish
@@ -50,9 +51,11 @@ export default function ManageQuestions() {
   const [step, setStep] = useState(1);
 
   const load = async () => {
+    const requestId = ++loadRequestId.current;
     const params = { limit: 200 };
     if (filter.class_level !== "all") params.class_level = filter.class_level;
     if (filter.topic) params.topic = filter.topic;
+    if (filter.question_number) params.question_number = filter.question_number;
     if (filter.status && filter.status !== "all") {
       if (filter.status === "published") params.status = "published";
       else params.category = filter.status;
@@ -61,6 +64,8 @@ export default function ManageQuestions() {
     if (filter.premium && filter.premium !== "all") params.premium = filter.premium;
     for (const key of ["created_from", "created_to", "published_from", "published_to"]) if (filter[key]) params[key] = filter[key];
     const r = await api.get("/api/questions", { params });
+    // Ignore stale responses when an admin changes filters quickly.
+    if (requestId !== loadRequestId.current) return;
     setItems(r.data.items || []);
     setSelected((current) => current.filter((id) => (r.data.items || []).some((q) => q._id === id)));
   };
@@ -212,9 +217,9 @@ export default function ManageQuestions() {
     } catch (err) { toast.error(formatApiError(err)); }
   };
 
-  const CSV_TEMPLATE = `subject,class_level,topic,question_text,q_type,option_a,option_b,option_c,option_d,correct_index,correct_answer_text,explanation,positive_marks,negative_marks,difficulty,image_url
-maths,10,Algebra,"Solve for x: 2x+3=11",mcq,3,4,5,6,1,4,"2x=8 so x=4",1,0.25,easy,
-maths,10,Quadratic,"Discriminant of $ax^2+bx+c$?",typed,,,,,,b^2-4ac,"D = b^2 - 4ac",2,0.5,medium,`;
+  const CSV_TEMPLATE = `subject,class_level,topic,question_number,question_text,q_type,option_a,option_b,option_c,option_d,correct_index,correct_answer_text,explanation,positive_marks,negative_marks,difficulty,image_url
+maths,10,Algebra,1.1,"Solve for x: 2x+3=11",mcq,3,4,5,6,1,4,"2x=8 so x=4",1,0.25,easy,
+maths,10,Quadratic,1.2,"Discriminant of $ax^2+bx+c$?",typed,,,,,,b^2-4ac,"D = b^2 - 4ac",2,0.5,medium,`;
 
   const downloadTemplate = () => {
     const blob = new Blob([CSV_TEMPLATE], { type: "text/csv" });
@@ -241,7 +246,7 @@ maths,10,Quadratic,"Discriminant of $ax^2+bx+c$?",typed,,,,,,b^2-4ac,"D = b^2 - 
 
   const renderQuestionForm = () => (
     <div className="space-y-4">
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <div><Label>Class</Label>
           <Select value={form.class_level} onValueChange={(v) => setF("class_level", v)}>
             <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
@@ -249,6 +254,7 @@ maths,10,Quadratic,"Discriminant of $ax^2+bx+c$?",typed,,,,,,b^2-4ac,"D = b^2 - 
           </Select>
         </div>
         <div><Label>Topic</Label><Input data-testid="q-topic-input" className="mt-1" value={form.topic} onChange={(e) => setF("topic", e.target.value)} placeholder="Algebra" /></div>
+        <div><Label>Question number</Label><Input data-testid="q-number-input" className="mt-1" inputMode="decimal" value={form.question_number || ""} onChange={(e) => setF("question_number", e.target.value)} placeholder="1.1" /></div>
         <div><Label>Type</Label>
           <Select value={form.q_type} onValueChange={(v) => setF("q_type", v)}>
             <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
@@ -569,6 +575,15 @@ maths,10,Quadratic,"Discriminant of $ax^2+bx+c$?",typed,,,,,,b^2-4ac,"D = b^2 - 
           <SelectContent><SelectItem value="all">All access</SelectItem><SelectItem value="free">Free</SelectItem><SelectItem value="premium">Premium</SelectItem></SelectContent>
         </Select>
         <Input placeholder="Filter by topic…" className="w-56 rounded-full" value={filter.topic} onChange={(e) => setFilter({ ...filter, topic: e.target.value })} />
+        <Input
+          aria-label="Filter by question number"
+          data-testid="question-number-filter"
+          inputMode="decimal"
+          placeholder="Number (e.g. 1.1)"
+          className="w-48 rounded-full"
+          value={filter.question_number}
+          onChange={(e) => setFilter({ ...filter, question_number: e.target.value })}
+        />
         <Input type="date" title="Created from" className="w-40 rounded-full" value={filter.created_from} onChange={(e) => setFilter({ ...filter, created_from: e.target.value })} />
         <Input type="date" title="Created to" className="w-40 rounded-full" value={filter.created_to} onChange={(e) => setFilter({ ...filter, created_to: e.target.value })} />
         <Input type="date" title="Published from" className="w-40 rounded-full" value={filter.published_from} onChange={(e) => setFilter({ ...filter, published_from: e.target.value })} />
@@ -598,6 +613,7 @@ maths,10,Quadratic,"Discriminant of $ax^2+bx+c$?",typed,,,,,,b^2-4ac,"D = b^2 - 
               <div className="flex-1">
                 <div className="flex items-center gap-2 text-xs text-[#64748B] flex-wrap">
                   <span className="uppercase tracking-widest text-[#7C3AED] font-semibold">{q.topic || "No topic"}</span>
+                  {q.question_number && <span className="font-mono font-semibold text-[#0F1B4C]">No. {q.question_number}</span>}
                   <span>· Class {q.class_level}</span>
                   <span>· {q.q_type?.toUpperCase()}</span>
                   <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${q.difficulty === "easy" ? "bg-green-100 text-green-700" : q.difficulty === "hard" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"}`}>{q.difficulty}</span>

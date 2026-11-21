@@ -104,6 +104,7 @@ class QuestionCreate(BaseModel):
     subject: str = "maths"
     class_level: Literal["8", "9", "10"]
     topic: str
+    question_number: Optional[str] = None
     question_text: str
     q_type: Literal["mcq", "typed", "file_upload"] = "mcq"
     options: Optional[List[QuestionOption]] = None
@@ -125,6 +126,7 @@ class QuestionUpdate(BaseModel):
     subject: Optional[str] = None
     class_level: Optional[Literal["8", "9", "10"]] = None
     topic: Optional[str] = None
+    question_number: Optional[str] = None
     question_text: Optional[str] = None
     q_type: Optional[Literal["mcq", "typed", "file_upload"]] = None
     options: Optional[List[QuestionOption]] = None

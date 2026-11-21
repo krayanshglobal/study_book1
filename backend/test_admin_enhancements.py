@@ -172,12 +172,20 @@ class TestFilteringBulkAndPremiumAccess(IsolatedAsyncioTestCase):
         ):
             await list_questions(
                 class_level="10", difficulty="hard", premium="premium",
-                created_from="2030-01-01", user={"role": "admin"},
+                created_from="2030-01-01", topic="Algeb", question_number="1.1",
+                user={"role": "admin"},
             )
         query_text = str(db.questions.query)
         self.assertIn("difficulty", query_text)
         self.assertIn("premium_only", query_text)
         self.assertIn("created_at", query_text)
+        self.assertIn("question_number", query_text)
+        self.assertIn("Algeb", query_text)
+        number_condition = next(condition for condition in db.questions.query["$and"] if "$or" in condition)
+        self.assertEqual(
+            number_condition["$or"][0]["question_number"]["$regex"],
+            r"^1\.1$",
+        )
 
     async def test_bulk_premium_updates_selected_records_and_audits(self):
         import server

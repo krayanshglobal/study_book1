@@ -1,6 +1,7 @@
 """Question bank endpoints."""
 import csv
 import io
+import re
 from fastapi import APIRouter, HTTPException, Depends, Query, UploadFile, File
 from bson import ObjectId
 from typing import Optional
@@ -101,7 +102,7 @@ async def bulk_upload_csv(
     admin=Depends(require_role("admin", "superadmin")),
 ):
     """CSV columns (header row required):
-    subject, class_level, topic, question_text, q_type, option_a, option_b, option_c, option_d, correct_index,
+    subject, class_level, topic, question_number, question_text, q_type, option_a, option_b, option_c, option_d, correct_index,
     correct_answer_text, explanation, positive_marks, negative_marks, difficulty, image_url
 
     q_type = 'mcq' or 'typed'. For MCQ, correct_index is 0-3. For typed, use correct_answer_text.
@@ -117,6 +118,7 @@ async def bulk_upload_csv(
                 "subject": (row.get("subject") or "maths").strip(),
                 "class_level": (row.get("class_level") or "10").strip(),
                 "topic": (row.get("topic") or "").strip(),
+                "question_number": (row.get("question_number") or "").strip() or None,
                 "question_text": (row.get("question_text") or "").strip(),
                 "q_type": q_type,
                 "options": None,
@@ -163,6 +165,7 @@ async def bulk_upload_csv(
 async def list_questions(
     class_level: Optional[str] = None,
     topic: Optional[str] = None,
+    question_number: Optional[str] = None,
     subject: Optional[str] = None,
     difficulty: Optional[str] = None,
     status: Optional[str] = None,
@@ -219,7 +222,20 @@ async def list_questions(
     if class_level:
         conditions.append({"class_level": str(class_level)})
     if topic:
-        conditions.append({"topic": topic})
+        # The admin topic filter is free text, so support partial and
+        # case-insensitive matches instead of requiring an exact value.
+        conditions.append({"topic": {"$regex": re.escape(topic.strip()), "$options": "i"}})
+    if question_number:
+        # These are labels (1.1, 1.2, 2.3.1), not floating-point values.
+        # Escaping ensures a dot is matched literally. Topic/text fallbacks
+        # also support questions created before this field was introduced.
+        number_pattern = re.escape(question_number.strip())
+        legacy_pattern = rf"(^|[^0-9.]){number_pattern}([^0-9.]|$)"
+        conditions.append({"$or": [
+            {"question_number": {"$regex": rf"^{number_pattern}$", "$options": "i"}},
+            {"topic": {"$regex": legacy_pattern, "$options": "i"}},
+            {"question_text": {"$regex": legacy_pattern, "$options": "i"}},
+        ]})
     if subject:
         conditions.append({"subject": subject})
     if difficulty and difficulty in ("easy", "medium", "hard"):

@@ -265,6 +265,16 @@ class AnnouncementCreate(BaseModel):
     audience: Literal["all", "students", "admins"] = "all"
     class_level: Optional[str] = None  # None means all classes
     active: bool = True
+    image_url: Optional[str] = None
+
+
+class AnnouncementUpdate(BaseModel):
+    title: Optional[str] = None
+    body: Optional[str] = None
+    audience: Optional[Literal["all", "students", "admins"]] = None
+    class_level: Optional[str] = None
+    active: Optional[bool] = None
+    image_url: Optional[str] = None
 
 
 # ---------- Study Notes ----------

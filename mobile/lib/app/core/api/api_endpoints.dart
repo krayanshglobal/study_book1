@@ -20,6 +20,7 @@ class ApiEndpoints {
   static const String bulkCsv = '/api/questions/bulk-csv';
   static String questionDetail(String id) => '/api/questions/$id';
   static String checkQuestion(String id) => '/api/questions/$id/check';
+  static const String dailyPractice = '/api/students/daily-practice';
 
   // Tests
   static const String tests = '/api/tests';

@@ -206,21 +206,23 @@ export default function StudentDashboard() {
 
   // Auto-play timer for dynamic moving banners
   useEffect(() => {
+    setActivePromoIndex((current) => promos.length ? Math.min(current, promos.length - 1) : 0);
     if (promos.length <= 1) return;
     const timer = setInterval(() => {
       setActivePromoIndex((prev) => (prev + 1) % promos.length);
     }, 5000);
     return () => clearInterval(timer);
-  }, [promos]);
+  }, [promos.length]);
 
   // Auto-play timer for dynamic moving announcements
   useEffect(() => {
+    setActiveAnnIndex((current) => announcements.length ? Math.min(current, announcements.length - 1) : 0);
     if (announcements.length <= 1) return;
     const timer = setInterval(() => {
       setActiveAnnIndex((prev) => (prev + 1) % announcements.length);
     }, 6000);
     return () => clearInterval(timer);
-  }, [announcements]);
+  }, [announcements.length]);
 
   useEffect(() => {
     const t = setInterval(() => setTick((x) => x + 1), 30000);
@@ -452,6 +454,13 @@ export default function StudentDashboard() {
             </button>
 
             <div className="flex-1 min-w-0 flex items-center gap-3 overflow-hidden">
+              {announcements[activeAnnIndex]?.image_url && (
+                <img
+                  src={announcements[activeAnnIndex].image_url.startsWith("/api/") ? `${process.env.REACT_APP_BACKEND_URL || "http://localhost:8000"}${announcements[activeAnnIndex].image_url}` : announcements[activeAnnIndex].image_url}
+                  alt=""
+                  className="w-14 h-12 rounded-lg object-cover border border-white/20 shrink-0"
+                />
+              )}
               <div className="w-7 h-7 rounded-lg grid place-items-center bg-white/10 text-white shrink-0">
                 <Bell size={14} className="animate-pulse" />
               </div>

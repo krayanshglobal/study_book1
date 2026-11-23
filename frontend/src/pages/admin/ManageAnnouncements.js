@@ -9,13 +9,24 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Trash2, Megaphone, Users, Shield, Globe, ArrowLeft, Plus } from "lucide-react";
+import { Trash2, Megaphone, Users, Shield, Globe, ArrowLeft, Plus, Image as ImageIcon, Pencil, X } from "lucide-react";
+
+const emptyForm = (classLevel) => ({
+  title: "", body: "", audience: "students", class_level: classLevel,
+  active: true, image_url: "",
+});
+const mediaUrl = (url) => url?.startsWith("/api/")
+  ? `${process.env.REACT_APP_BACKEND_URL || "http://localhost:8000"}${url}`
+  : url;
 
 export default function ManageAnnouncements() {
   const [activeClass, setActiveClass] = useState(localStorage.getItem("admin_class_level") || "8");
   const [step, setStep] = useState(1);
   const [items, setItems] = useState([]);
-  const [form, setForm] = useState({ title: "", body: "", audience: "students", class_level: activeClass, active: true });
+  const [form, setForm] = useState(() => emptyForm(activeClass));
+  const [editingId, setEditingId] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = React.useRef(null);
 
   const str = (v) => String(v || "");
 
@@ -44,11 +55,51 @@ export default function ManageAnnouncements() {
     if (!form.title.trim() || !form.body.trim()) { toast.error("Title and message are required"); return; }
     try {
       const payload = { ...form, class_level: form.class_level === "all" ? null : form.class_level };
-      await api.post("/api/announcements", payload);
-      toast.success("Announcement broadcast!");
-      setForm({ title: "", body: "", audience: "students", class_level: activeClass, active: true });
+      if (editingId) await api.put(`/api/announcements/${editingId}`, payload);
+      else await api.post("/api/announcements", payload);
+      toast.success(editingId ? "Announcement updated!" : "Announcement broadcast!");
+      setEditingId(null);
+      setForm(emptyForm(activeClass));
       load();
     } catch (err) { toast.error(formatApiError(err)); }
+  };
+
+  const uploadImage = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const data = new FormData();
+      data.append("file", file);
+      const response = await api.post("/api/uploads/image", data, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      setForm((current) => ({ ...current, image_url: response.data.url }));
+      toast.success("Announcement image uploaded");
+    } catch (err) {
+      toast.error(formatApiError(err));
+    } finally {
+      setUploading(false);
+      event.target.value = "";
+    }
+  };
+
+  const edit = (announcement) => {
+    setEditingId(announcement._id);
+    setForm({
+      title: announcement.title || "",
+      body: announcement.body || "",
+      audience: announcement.audience || "students",
+      class_level: announcement.class_level || "all",
+      active: announcement.active !== false,
+      image_url: announcement.image_url || "",
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setForm(emptyForm(activeClass));
   };
 
   const del = async (id) => {
@@ -160,6 +211,23 @@ export default function ManageAnnouncements() {
                   placeholder="Write your announcement here…"
                 />
               </div>
+              <div>
+                <div className="flex items-center justify-between gap-3">
+                  <Label>Announcement image (optional)</Label>
+                  <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="hidden" onChange={uploadImage} />
+                  <Button type="button" variant="outline" size="sm" disabled={uploading} onClick={() => fileInputRef.current?.click()} className="rounded-full gap-1">
+                    <ImageIcon size={14} /> {uploading ? "Uploading…" : "Upload image"}
+                  </Button>
+                </div>
+                {form.image_url && (
+                  <div className="mt-3 relative w-full max-w-md overflow-hidden rounded-xl border bg-slate-50">
+                    <img src={mediaUrl(form.image_url)} alt="Announcement preview" className="w-full max-h-52 object-cover" />
+                    <button type="button" onClick={() => setForm({ ...form, image_url: "" })} className="absolute right-2 top-2 rounded-full bg-black/60 p-1.5 text-white" aria-label="Remove image">
+                      <X size={14} />
+                    </button>
+                  </div>
+                )}
+              </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label>Audience</Label>
@@ -185,9 +253,10 @@ export default function ManageAnnouncements() {
                   </Select>
                 </div>
               </div>
-              <div className="flex justify-end">
+              <div className="flex justify-end gap-2">
+                {editingId && <Button type="button" variant="outline" onClick={cancelEdit} className="rounded-full">Cancel</Button>}
                 <Button onClick={save} data-testid="send-ann-btn" className="rounded-full bg-[#0F1B4C] hover:bg-[#2563EB]">
-                  Broadcast Announcement
+                  {editingId ? "Save Changes" : "Broadcast Announcement"}
                 </Button>
               </div>
             </div>
@@ -198,7 +267,7 @@ export default function ManageAnnouncements() {
             <h2 className="font-serif text-xl text-[#0F1B4C] font-semibold">Active Announcements ({items.length})</h2>
             {items.map((ann) => (
               <Card key={ann._id} className="p-5 rounded-2xl border-slate-200 flex items-start justify-between gap-4 bg-white">
-                <div>
+                <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap mb-2">
                     <span className={`inline-flex items-center gap-1 text-[10px] uppercase tracking-wider font-semibold px-2.5 py-0.5 rounded-full ${audienceColor(ann.audience)}`}>
                       {audienceIcon(ann.audience)} {ann.audience}
@@ -215,6 +284,7 @@ export default function ManageAnnouncements() {
                   </div>
                   <h3 className="font-serif text-lg text-[#0F1B4C] font-semibold">{ann.title}</h3>
                   <p className="text-sm text-[#475569] mt-1">{ann.body}</p>
+                  {ann.image_url && <img src={mediaUrl(ann.image_url)} alt="" className="mt-3 w-full max-w-sm max-h-40 rounded-xl object-cover border" />}
                   {ann.created_at && (
                     <div className="text-xs text-slate-400 mt-2">
                       {new Date(ann.created_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}
@@ -222,14 +292,10 @@ export default function ManageAnnouncements() {
                   )}
                 </div>
 
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => del(ann._id)}
-                  className="shrink-0 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-xl flex items-center gap-1"
-                >
-                  <Trash2 size={15} /> Delete
-                </Button>
+                <div className="shrink-0 flex gap-1">
+                  <Button variant="ghost" size="sm" onClick={() => edit(ann)} className="text-blue-600 hover:bg-blue-50 rounded-xl gap-1"><Pencil size={15} /> Edit</Button>
+                  <Button variant="ghost" size="sm" onClick={() => del(ann._id)} className="text-red-500 hover:text-red-700 hover:bg-red-50 rounded-xl gap-1"><Trash2 size={15} /> Delete</Button>
+                </div>
               </Card>
             ))}
             {items.length === 0 && (

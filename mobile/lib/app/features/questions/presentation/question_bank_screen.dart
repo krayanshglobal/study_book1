@@ -36,11 +36,28 @@ class _QuestionBankState extends ConsumerState<QuestionBankScreen> {
   // Tracks which question IDs the student has answered in this session.
   // Updated immediately when a student submits any answer (correct or not).
   final Set<String> _answeredIds = {};
+  List<Map<String, dynamic>> _todayAttempts = [];
 
   void _markAnswered(String id) {
     if (!_answeredIds.contains(id)) {
       setState(() => _answeredIds.add(id));
     }
+    if (widget.dailyOnly) _refreshDailyStatus();
+  }
+
+  Future<void> _refreshDailyStatus() async {
+    try {
+      final response = await dioClient.get(ApiEndpoints.dailyPractice);
+      final attempts = List<Map<String, dynamic>>.from(
+          response.data['attended_questions'] ?? const []);
+      final attemptedIds = List<String>.from(
+          (response.data['attempted_ids'] ?? const []).map((id) => '$id'));
+      if (!mounted) return;
+      setState(() {
+        _todayAttempts = attempts;
+        _answeredIds.addAll(attemptedIds);
+      });
+    } catch (_) {}
   }
 
   @override
@@ -102,6 +119,7 @@ class _QuestionBankState extends ConsumerState<QuestionBankScreen> {
         _total = r.data['total'] ?? 0;
         _loading = false;
       });
+      if (widget.dailyOnly) await _refreshDailyStatus();
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
@@ -374,6 +392,9 @@ class _QuestionBankState extends ConsumerState<QuestionBankScreen> {
               ),
             ),
 
+          if (widget.dailyOnly && _todayAttempts.isNotEmpty)
+            _TodayAttemptsPanel(attempts: _todayAttempts),
+
           // Questions list
           Expanded(
             child: _loading && _questions.isEmpty
@@ -421,6 +442,96 @@ class _QuestionBankState extends ConsumerState<QuestionBankScreen> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+class _TodayAttemptsPanel extends StatelessWidget {
+  final List<Map<String, dynamic>> attempts;
+
+  const _TodayAttemptsPanel({required this.attempts});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 150,
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.slate200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text("Today's Attended Questions",
+              style: GoogleFonts.fraunces(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.navy)),
+          const SizedBox(height: 8),
+          Expanded(
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: attempts.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (_, index) {
+                final attempt = attempts[index];
+                final correct = attempt['is_correct'] == true;
+                return Container(
+                  width: 245,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: (correct ? AppColors.success : AppColors.error)
+                        .withAlpha(12),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                        color: (correct ? AppColors.success : AppColors.error)
+                            .withAlpha(55)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(children: [
+                        Icon(correct ? Icons.check_circle : Icons.cancel,
+                            size: 15,
+                            color:
+                                correct ? AppColors.success : AppColors.error),
+                        const SizedBox(width: 5),
+                        Expanded(
+                          child: Text(
+                              '${attempt['question_text'] ?? 'Question ${index + 1}'}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.inter(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.navy)),
+                        ),
+                      ]),
+                      const SizedBox(height: 5),
+                      Text(
+                          'Your answer: ${attempt['user_answer'] ?? 'Not available'}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.inter(
+                              fontSize: 10, color: AppColors.slate700)),
+                      if (!correct)
+                        Text(
+                            'Correct: ${attempt['correct_answer'] ?? 'Not available'}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.inter(
+                                fontSize: 10, color: AppColors.success)),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // Statistics Pill Widget
 // ─────────────────────────────────────────────────────────────────────────────
 

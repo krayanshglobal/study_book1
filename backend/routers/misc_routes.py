@@ -5,7 +5,7 @@ from bson import ObjectId
 from typing import Optional
 from models import (
     VideoCreate, VideoUpdate, PlanCreate, PlanUpdate, CheckoutInput, RazorpayVerifyInput,
-    AnnouncementCreate, UserUpdateAdmin, SubscriptionPatch, UserBulkSubscriptionInput, ContentBulkPremiumInput,
+    AnnouncementCreate, AnnouncementUpdate, UserUpdateAdmin, SubscriptionPatch, UserBulkSubscriptionInput, ContentBulkPremiumInput,
     LeaderboardAttemptUpdate, now_iso,
 )
 from auth import get_current_user, require_premium, require_role, hash_password
@@ -1035,6 +1035,24 @@ async def create_announcement(body: AnnouncementCreate, admin=Depends(require_ro
     r = await db.announcements.insert_one(doc)
     doc["_id"] = str(r.inserted_id)
     return doc
+
+
+@router.put("/api/announcements/{aid}")
+async def update_announcement(
+    aid: str,
+    body: AnnouncementUpdate,
+    _=Depends(require_role("admin", "superadmin")),
+):
+    from server import db
+    oid = _safe_oid(aid, "announcement ID")
+    upd = body.model_dump(exclude_unset=True)
+    if not upd:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    upd["updated_at"] = now_iso()
+    result = await db.announcements.update_one({"_id": oid}, {"$set": upd})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Announcement not found")
+    return _ser(await db.announcements.find_one({"_id": oid}))
 
 
 @router.delete("/api/announcements/{aid}")

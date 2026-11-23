@@ -5,6 +5,7 @@ class AnnouncementModel {
   final String audience;
   final bool active;
   final String? createdAt;
+  final String? imageUrl;
 
   AnnouncementModel({
     required this.id,
@@ -13,6 +14,7 @@ class AnnouncementModel {
     this.audience = 'all',
     this.active = true,
     this.createdAt,
+    this.imageUrl,
   });
 
   factory AnnouncementModel.fromJson(Map<String, dynamic> json) {
@@ -23,6 +25,7 @@ class AnnouncementModel {
       audience: json['audience']?.toString() ?? 'all',
       active: json['active'] != false,
       createdAt: json['created_at']?.toString(),
+      imageUrl: json['image_url']?.toString(),
     );
   }
 }

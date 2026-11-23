@@ -417,6 +417,8 @@ async def check_answer(qid: str, body: dict, user=Depends(require_premium)):
                 {"$set": {
                     "is_correct": correct,
                     "points_earned": earned_pts,
+                    "selected_index": body.get("selected_index") if q.get("q_type") == "mcq" else None,
+                    "typed_answer": str(body.get("typed_answer", "")).strip() if q.get("q_type") == "typed" else None,
                     "date": today_str,
                     "q_posted_date": q_date,
                     "is_posted_today": is_posted_today,
@@ -466,6 +468,8 @@ async def check_answer(qid: str, body: dict, user=Depends(require_premium)):
         "correct_index": q.get("correct_index"),
         "correct_answer_text": q.get("correct_answer_text"),
         "explanation": q.get("explanation"),
+        "selected_index": body.get("selected_index") if q.get("q_type") == "mcq" else None,
+        "typed_answer": str(body.get("typed_answer", "")).strip() if q.get("q_type") == "typed" else None,
         "daily_bonus_earned": daily_bonus_earned,
     }
 

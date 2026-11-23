@@ -3,16 +3,17 @@ import api, { formatApiError } from "@/lib/api";
 import BackButton from "@/components/BackButton";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   CheckCircle2, XCircle, BookOpen, CalendarDays, CircleCheck, CircleDashed,
-  ChevronDown, ChevronUp, Flame, ArrowLeft, ArrowRight, BarChart2, Clock, Sparkles
+  ChevronDown, ChevronUp, Flame, ArrowLeft, ArrowRight, Clock, Sparkles
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import MathText from "@/components/MathText";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 
 // Helper to format ISO date string into Year-Month string (e.g. "August 2026")
 const formatMonthYear = (isoStr) => {
@@ -30,7 +31,6 @@ const toYearMonthKey = (isoStr) => {
 
 export default function QuestionBank() {
   const { user, refresh } = useAuth();
-  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const isStaff = user?.role === "admin" || user?.role === "superadmin";
@@ -51,6 +51,7 @@ export default function QuestionBank() {
   const [topics, setTopics] = useState([]);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [todayAttempts, setTodayAttempts] = useState([]);
 
   // Per-question answer state: { [qId]: { selected, typed, feedback, open } }
   const storageKey = `qbank_state_${user?._id || "guest"}`;
@@ -94,6 +95,7 @@ export default function QuestionBank() {
         // If daily practice mode, sync qState with backend attempted_map
         if (mode === "daily" && dp?.data) {
           const serverAttemptedMap = dp.data.attempted_map || {};
+          setTodayAttempts(dp.data.attended_questions || []);
           setQState((prev) => {
             const next = { ...prev };
             fetchedItems.forEach((q) => {
@@ -167,6 +169,10 @@ export default function QuestionBank() {
         typed_answer: s.typed ?? "",
       });
       setQ(q._id, { feedback: r.data, open: true });
+      if (mode === "daily") {
+        const status = await api.get("/api/students/daily-practice");
+        setTodayAttempts(status.data.attended_questions || []);
+      }
       if (r.data?.daily_bonus_earned) {
         toast.success("🎉 Daily Bonus! +1 point earned!");
       }
@@ -349,15 +355,38 @@ export default function QuestionBank() {
           </div>
           <div>
             <h3 className="font-serif text-2xl font-bold">Daily Practice Complete! 🎉</h3>
-            <p className="text-xs text-blue-200 mt-1">You&apos;ve finished all active daily questions. Check your strengths and weaknesses in your analysis.</p>
+            <p className="text-xs text-blue-200 mt-1">You&apos;ve finished all active daily questions. Your answers and results remain below for review.</p>
           </div>
-          <Button
-            onClick={() => navigate("/my-analytics")}
-            className="rounded-full bg-white text-[#0F1B4C] hover:bg-blue-50 font-bold px-6 py-2.5 text-xs shadow-md"
-          >
-            <BarChart2 size={16} className="mr-1.5" /> Take me to My Analytics
-          </Button>
         </motion.div>
+      )}
+
+      {mode === "daily" && todayAttempts.length > 0 && (
+        <section className="mt-6 rounded-3xl border border-blue-100 bg-white p-5 sm:p-6 shadow-sm">
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <div>
+              <h2 className="font-serif text-2xl font-semibold text-[#0F1B4C]">Today&apos;s Attended Questions</h2>
+              <p className="text-xs text-slate-500 mt-1">Your submitted answers and results for today.</p>
+            </div>
+            <Badge variant="outline" className="rounded-full">{todayAttempts.length} attempted</Badge>
+          </div>
+          <div className="space-y-3">
+            {todayAttempts.map((attempt, index) => (
+              <div key={`${attempt.question_id}-${index}`} className={`rounded-2xl border p-4 ${attempt.is_correct ? "border-emerald-200 bg-emerald-50/50" : "border-rose-200 bg-rose-50/50"}`}>
+                <div className="flex items-start gap-3">
+                  {attempt.is_correct ? <CheckCircle2 className="text-emerald-600 shrink-0 mt-0.5" size={19} /> : <XCircle className="text-rose-500 shrink-0 mt-0.5" size={19} />}
+                  <div className="min-w-0 flex-1">
+                    <div className="font-medium text-sm text-[#0F1B4C]"><MathText text={attempt.question_text || `Question ${index + 1}`} /></div>
+                    <div className="mt-2 grid sm:grid-cols-2 gap-2 text-xs">
+                      <div><span className="font-semibold text-slate-500">Your answer:</span> <span className="text-slate-800">{attempt.user_answer || "Answer not available"}</span></div>
+                      {!attempt.is_correct && <div><span className="font-semibold text-slate-500">Correct answer:</span> <span className="text-emerald-700">{attempt.correct_answer || "Not available"}</span></div>}
+                    </div>
+                    {attempt.explanation && <div className="mt-2 text-xs text-slate-600"><span className="font-semibold">Explanation:</span> <MathText text={attempt.explanation} /></div>}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
       )}
 
       {/* Questions list */}

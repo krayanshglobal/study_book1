@@ -19,13 +19,16 @@ router = APIRouter(tags=["analytics-uploads"])
 @router.post("/api/uploads/image")
 async def upload_image(file: UploadFile = File(...), user=Depends(get_current_user)):
     from server import db
+    content_type = (file.content_type or "").lower()
+    if not content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Only image files are allowed")
     raw = await file.read()
     if len(raw) > 4 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="File too large (max 4 MB)")
     doc_id = str(uuid.uuid4())
     await db.uploads.insert_one({
         "_id": doc_id,
-        "content_type": file.content_type or "image/png",
+        "content_type": content_type,
         "data": base64.b64encode(raw).decode("ascii"),
         "size": len(raw),
         "user_id": user["_id"],
@@ -280,11 +283,50 @@ async def daily_practice(user=Depends(require_premium)):
     # ── Which ones has this student already attempted today? ────────────
     attempted = await db.question_attempts.find(
         {"user_id": str(user["_id"]), "question_id": {"$in": daily_ids}, "date": today_str},
-        {"question_id": 1, "is_correct": 1}
+        {
+            "question_id": 1, "is_correct": 1, "points_earned": 1,
+            "selected_index": 1, "typed_answer": 1, "solved_at": 1,
+        }
     ).to_list(length=10)
     attempted_map = {a["question_id"]: a.get("is_correct") for a in attempted}
     attempted_ids = list(attempted_map.keys())
     completed = len(attempted_ids) >= len(daily_ids)
+
+    attempted_oids = []
+    for attempt in attempted:
+        try:
+            attempted_oids.append(ObjectId(attempt["question_id"]))
+        except Exception:
+            pass
+    question_map = {
+        str(item["_id"]): item
+        async for item in db.questions.find({"_id": {"$in": attempted_oids}})
+    }
+    attended_questions = []
+    for attempt in sorted(attempted, key=lambda item: item.get("solved_at", ""), reverse=True):
+        item = question_map.get(attempt.get("question_id"), {})
+        options = item.get("options") or []
+        selected_index = attempt.get("selected_index")
+        user_answer = attempt.get("typed_answer")
+        if not user_answer and isinstance(selected_index, int) and 0 <= selected_index < len(options):
+            option = options[selected_index]
+            user_answer = option.get("text") if isinstance(option, dict) else str(option)
+        correct_index = item.get("correct_index")
+        correct_answer = item.get("correct_answer_text")
+        if correct_answer is None and isinstance(correct_index, int) and 0 <= correct_index < len(options):
+            option = options[correct_index]
+            correct_answer = option.get("text") if isinstance(option, dict) else str(option)
+        attended_questions.append({
+            "question_id": attempt.get("question_id"),
+            "question_text": item.get("question_text", ""),
+            "q_type": item.get("q_type", "mcq"),
+            "user_answer": user_answer,
+            "is_correct": bool(attempt.get("is_correct")),
+            "correct_answer": correct_answer,
+            "explanation": item.get("explanation"),
+            "points_earned": attempt.get("points_earned", 0),
+            "solved_at": attempt.get("solved_at"),
+        })
 
     # ── Streak calculation ─────────────────────────────────────────────
     streak = 0
@@ -313,6 +355,7 @@ async def daily_practice(user=Depends(require_premium)):
         "questions": questions,
         "attempted_map": attempted_map,
         "attempted_ids": attempted_ids,
+        "attended_questions": attended_questions,
         "total": len(daily_ids),
         "completed": completed,
         "streak": streak,
@@ -434,4 +477,3 @@ async def student_monthly_analysis(user=Depends(require_premium)):
         "topics": topics_month,
         "test_scores": test_scores,
     }
-

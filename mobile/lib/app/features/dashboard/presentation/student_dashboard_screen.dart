@@ -7,6 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../../core/api/api_endpoints.dart';
 import '../../../core/api/dio_client.dart';
+import '../../../core/config/app_config.dart';
 import '../../../core/models/promo_model.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../auth/providers/auth_provider.dart';
@@ -94,6 +95,7 @@ class _State extends ConsumerState<StudentDashboardScreen> {
   Map<String, String> _promoTimes = {};
   bool _loading = true;
   Timer? _promoTimer;
+  Timer? _promoSlideTimer;
 
   @override
   void initState() {
@@ -109,6 +111,7 @@ class _State extends ConsumerState<StudentDashboardScreen> {
   @override
   void dispose() {
     _promoTimer?.cancel();
+    _promoSlideTimer?.cancel();
     super.dispose();
   }
 
@@ -122,6 +125,16 @@ class _State extends ConsumerState<StudentDashboardScreen> {
         updated[p.id] = _fmtPromoCountdown(p.remainingTime());
       }
       setState(() => _promoTimes = updated);
+    });
+  }
+
+  void _startPromoAutoSlide() {
+    _promoSlideTimer?.cancel();
+    if (_promos.length <= 1) return;
+    _promoSlideTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (!mounted || _promos.length <= 1) return;
+      setState(
+          () => _activePromoIndex = (_activePromoIndex + 1) % _promos.length);
     });
   }
 
@@ -168,9 +181,15 @@ class _State extends ConsumerState<StudentDashboardScreen> {
       _refs = referrals;
       _announcements = announcements;
       _promos = promos;
+      if (_promos.isEmpty) {
+        _activePromoIndex = 0;
+      } else if (_activePromoIndex >= _promos.length) {
+        _activePromoIndex = _promos.length - 1;
+      }
       _loading = false;
     });
     _startPromoTimer();
+    _startPromoAutoSlide();
   }
 
   @override
@@ -500,8 +519,10 @@ class _CompactAnnouncementBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final hasImages = announcements
+        .any((item) => (item['image_url'] as String?)?.isNotEmpty == true);
     return Container(
-      height: 58,
+      height: hasImages ? 76 : 58,
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           begin: Alignment.centerLeft,
@@ -537,6 +558,10 @@ class _CompactAnnouncementBanner extends StatelessWidget {
               itemBuilder: (context, i) {
                 final a = announcements[i];
                 final title = (a['title'] as String?) ?? '';
+                final rawImageUrl = (a['image_url'] as String?) ?? '';
+                final imageUrl = rawImageUrl.startsWith('/api/')
+                    ? '${AppConfig.baseUrl}$rawImageUrl'
+                    : rawImageUrl;
                 final createdAt = a['created_at'] as String?;
                 String dateStr = '';
                 if (createdAt != null) {
@@ -567,6 +592,20 @@ class _CompactAnnouncementBanner extends StatelessWidget {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        if (imageUrl.isNotEmpty) ...[
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Image.network(
+                              imageUrl,
+                              width: 48,
+                              height: 48,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) =>
+                                  const SizedBox.shrink(),
+                            ),
+                          ),
+                          const SizedBox(width: 9),
+                        ],
                         Flexible(
                           child: Text(
                             title,

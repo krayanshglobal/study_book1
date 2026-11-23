@@ -70,6 +70,22 @@ export default function DailyPractice() {
       const r = res.data;
       setResult(r);
       setSessionAttempted(prev => ({ ...prev, [q._id]: { correct: r.correct } }));
+      const optionText = q.q_type === "mcq" ? q.options?.[selected]?.text : typedAnswer;
+      const correctOptionText = q.q_type === "mcq" ? q.options?.[r.correct_index]?.text : r.correct_answer_text;
+      setData((current) => {
+        const attended = (current?.attended_questions || []).filter((item) => item.question_id !== q._id);
+        return {
+          ...current,
+          attended_questions: [{
+            question_id: q._id,
+            question_text: q.question_text,
+            user_answer: optionText,
+            is_correct: r.correct,
+            correct_answer: correctOptionText,
+            explanation: r.explanation,
+          }, ...attended],
+        };
+      });
       if (r.daily_bonus_earned) {
         toast.success("🎉 Daily bonus earned! +1 point", { duration: 4000 });
       }
@@ -99,7 +115,7 @@ export default function DailyPractice() {
   if (showCompletion && !loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-[#0F1B4C] via-[#1a2a6c] to-[#2563EB] flex items-center justify-center p-4">
-        <div className="max-w-lg w-full text-center space-y-6">
+        <div className="max-w-3xl w-full text-center space-y-6">
           <div className="w-24 h-24 rounded-full bg-amber-400/20 border-2 border-amber-400 flex items-center justify-center mx-auto animate-bounce">
             <Trophy size={40} className="text-amber-400" />
           </div>
@@ -126,6 +142,25 @@ export default function DailyPractice() {
           {streak > 0 && (
             <div className="bg-amber-500/20 border border-amber-500/40 rounded-2xl p-4 text-amber-300 text-sm font-medium">
               🔥 {streak}-day streak! Keep it up, come back tomorrow!
+            </div>
+          )}
+
+          {(data?.attended_questions || []).length > 0 && (
+            <div className="rounded-2xl bg-white p-5 text-left shadow-xl">
+              <h2 className="font-serif text-xl font-bold text-[#0F1B4C]">Today&apos;s Attended Questions</h2>
+              <p className="text-xs text-slate-500 mt-1 mb-4">Review your submitted answers and results.</p>
+              <div className="space-y-3 max-h-[45vh] overflow-y-auto pr-1">
+                {data.attended_questions.map((attempt, index) => (
+                  <div key={`${attempt.question_id}-${index}`} className={`rounded-xl border p-4 ${attempt.is_correct ? "border-emerald-200 bg-emerald-50" : "border-rose-200 bg-rose-50"}`}>
+                    <div className="flex gap-2 text-sm font-medium text-[#0F1B4C]">
+                      {attempt.is_correct ? <CheckCircle2 size={18} className="text-emerald-600 shrink-0" /> : <XCircle size={18} className="text-rose-500 shrink-0" />}
+                      <MathText text={attempt.question_text || `Question ${index + 1}`} />
+                    </div>
+                    <div className="mt-2 text-xs text-slate-700"><strong>Your answer:</strong> {attempt.user_answer || "Answer not available"}</div>
+                    {!attempt.is_correct && <div className="mt-1 text-xs text-emerald-700"><strong>Correct answer:</strong> {attempt.correct_answer || "Not available"}</div>}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 

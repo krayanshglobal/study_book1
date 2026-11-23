@@ -92,6 +92,27 @@ export default function QuestionBank() {
         const fetchedItems = r.data.items || [];
         setItems(fetchedItems);
 
+        // Restore server-side attempts for both Question Bank and Daily modes.
+        // This permanently removes the Check Answer button after submission,
+        // including after refresh or signing in on another device.
+        setQState((prev) => {
+          const next = { ...prev };
+          fetchedItems.forEach((q) => {
+            if (q.attempt) {
+              next[q._id] = {
+                ...(next[q._id] || {}),
+                selected: q.attempt.selected_index ?? next[q._id]?.selected,
+                typed: q.attempt.typed_answer ?? next[q._id]?.typed ?? "",
+                feedback: q.attempt,
+              };
+            }
+          });
+          try {
+            localStorage.setItem(storageKey, JSON.stringify(next));
+          } catch {}
+          return next;
+        });
+
         // If daily practice mode, sync qState with backend attempted_map
         if (mode === "daily" && dp?.data) {
           const serverAttemptedMap = dp.data.attempted_map || {};

@@ -31,6 +31,7 @@ class QuestionModel {
   final String? imageUrl;
   final String? createdBy;
   final String? createdAt;
+  final Map<String, dynamic>? attempt;
 
   QuestionModel({
     required this.id,
@@ -49,6 +50,7 @@ class QuestionModel {
     this.imageUrl,
     this.createdBy,
     this.createdAt,
+    this.attempt,
   });
 
   factory QuestionModel.fromJson(Map<String, dynamic> json) {
@@ -120,6 +122,9 @@ class QuestionModel {
       imageUrl: json['image_url']?.toString(),
       createdBy: json['created_by']?.toString(),
       createdAt: json['created_at']?.toString(),
+      attempt: json['attempt'] is Map
+          ? Map<String, dynamic>.from(json['attempt'] as Map)
+          : null,
     );
   }
 
@@ -141,6 +146,7 @@ class QuestionModel {
       'image_url': imageUrl,
       'created_by': createdBy,
       'created_at': createdAt,
+      'attempt': attempt,
     };
   }
 }

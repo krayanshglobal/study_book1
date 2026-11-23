@@ -11,6 +11,47 @@ import '../../auth/providers/auth_provider.dart';
 import '../../common/widgets/app_drawer.dart';
 import '../../common/widgets/shared_widgets.dart';
 
+String _plainTextFromHtml(Object? value) {
+  var text = value?.toString() ?? '';
+  if (!text.contains('<') && !text.contains('&')) return text.trim();
+
+  text = text
+      .replaceAll(RegExp(r'<\s*br\s*/?\s*>', caseSensitive: false), '\n')
+      .replaceAll(
+          RegExp(r'</\s*(p|div|li|h[1-6]|tr)\s*>', caseSensitive: false), '\n')
+      .replaceAll(RegExp(r'<\s*li(?:\s[^>]*)?>', caseSensitive: false), '• ')
+      .replaceAll(RegExp(r'<\/?[a-zA-Z][^>]*>'), '')
+      .replaceAll(RegExp(r'<!--[\s\S]*?-->'), '');
+
+  const namedEntities = {
+    '&nbsp;': ' ',
+    '&amp;': '&',
+    '&lt;': '<',
+    '&gt;': '>',
+    '&quot;': '"',
+    '&#39;': "'",
+    '&apos;': "'",
+  };
+  namedEntities.forEach((entity, replacement) {
+    text = text.replaceAll(entity, replacement);
+  });
+
+  text = text.replaceAllMapped(RegExp(r'&#(x[0-9a-fA-F]+|\d+);'), (match) {
+    final raw = match.group(1)!;
+    final code = raw.toLowerCase().startsWith('x')
+        ? int.tryParse(raw.substring(1), radix: 16)
+        : int.tryParse(raw);
+    return code == null ? match.group(0)! : String.fromCharCode(code);
+  });
+
+  return text
+      .split('\n')
+      .map((line) => line.replaceAll(RegExp(r'[ \t]+'), ' ').trim())
+      .where((line) => line.isNotEmpty)
+      .join('\n')
+      .trim();
+}
+
 class QuestionBankScreen extends ConsumerStatefulWidget {
   final bool dailyOnly;
 
@@ -116,6 +157,9 @@ class _QuestionBankState extends ConsumerState<QuestionBankScreen> {
         } else {
           _questions.addAll(items);
         }
+        _answeredIds.addAll(items
+            .where((question) => question.attempt != null)
+            .map((question) => question.id));
         _total = r.data['total'] ?? 0;
         _loading = false;
       });
@@ -258,12 +302,12 @@ class _QuestionBankState extends ConsumerState<QuestionBankScreen> {
                                   const BorderSide(color: AppColors.slate200)),
                           isDense: true,
                         ),
-                        hint: Text('Topic',
+                        hint: Text('Chapter',
                             style: GoogleFonts.inter(
                                 fontSize: 13, color: AppColors.slate400)),
                         items: [
                           const DropdownMenuItem(
-                              value: null, child: Text('All topics')),
+                              value: null, child: Text('All chapters')),
                           ..._topics.map((t) => DropdownMenuItem(
                               value: t['topic'] as String,
                               child: Text(t['topic'] as String))),
@@ -497,7 +541,8 @@ class _TodayAttemptsPanel extends StatelessWidget {
                         const SizedBox(width: 5),
                         Expanded(
                           child: Text(
-                              '${attempt['question_text'] ?? 'Question ${index + 1}'}',
+                              _plainTextFromHtml(attempt['question_text'] ??
+                                  'Question ${index + 1}'),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: GoogleFonts.inter(
@@ -508,14 +553,14 @@ class _TodayAttemptsPanel extends StatelessWidget {
                       ]),
                       const SizedBox(height: 5),
                       Text(
-                          'Your answer: ${attempt['user_answer'] ?? 'Not available'}',
+                          'Your answer: ${_plainTextFromHtml(attempt['user_answer'] ?? 'Not available')}',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: GoogleFonts.inter(
                               fontSize: 10, color: AppColors.slate700)),
                       if (!correct)
                         Text(
-                            'Correct: ${attempt['correct_answer'] ?? 'Not available'}',
+                            'Correct: ${_plainTextFromHtml(attempt['correct_answer'] ?? 'Not available')}',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: GoogleFonts.inter(
@@ -611,6 +656,17 @@ class _QuestionCardState extends State<_QuestionCard> {
   Map? _result;
   bool _submitting = false;
 
+  @override
+  void initState() {
+    super.initState();
+    final attempt = widget.question.attempt;
+    if (attempt != null) {
+      _selectedIndex = (attempt['selected_index'] as num?)?.toInt();
+      _typedAnswer = attempt['typed_answer']?.toString() ?? '';
+      _result = Map<String, dynamic>.from(attempt);
+    }
+  }
+
   Future<void> _check() async {
     setState(() => _submitting = true);
     try {
@@ -658,13 +714,16 @@ class _QuestionCardState extends State<_QuestionCard> {
               children: [
                 _Badge('Class ${q.classLevel}', AppColors.navy),
                 const SizedBox(width: 6),
-                _Badge(q.topic, AppColors.blue),
+                if (q.topic.trim().isNotEmpty) ...[
+                  _Badge(q.topic, AppColors.blue),
+                  const SizedBox(width: 6),
+                ],
                 const Spacer(),
                 _Badge(q.difficulty, _difficultyColor(q.difficulty)),
               ],
             ),
             const SizedBox(height: 12),
-            Text(q.questionText,
+            Text(_plainTextFromHtml(q.questionText),
                 style: GoogleFonts.inter(fontSize: 14, color: AppColors.navy)),
             const SizedBox(height: 12),
 
@@ -726,7 +785,7 @@ class _QuestionCardState extends State<_QuestionCard> {
                         ),
                         const SizedBox(width: 10),
                         Expanded(
-                            child: Text(opt.text,
+                            child: Text(_plainTextFromHtml(opt.text),
                                 style: GoogleFonts.inter(
                                     fontSize: 13, color: AppColors.navy))),
                       ],
@@ -811,7 +870,7 @@ class _QuestionCardState extends State<_QuestionCard> {
                     ]),
                     if (_result!['explanation'] != null) ...[
                       const SizedBox(height: 6),
-                      Text('${_result!['explanation']}',
+                      Text(_plainTextFromHtml(_result!['explanation']),
                           style: GoogleFonts.inter(
                               fontSize: 12, color: AppColors.slate700)),
                     ],

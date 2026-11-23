@@ -14,7 +14,8 @@ class ManageQuestionsScreen extends ConsumerStatefulWidget {
   const ManageQuestionsScreen({super.key});
 
   @override
-  ConsumerState<ManageQuestionsScreen> createState() => _ManageQuestionsScreenState();
+  ConsumerState<ManageQuestionsScreen> createState() =>
+      _ManageQuestionsScreenState();
 }
 
 class _ManageQuestionsScreenState extends ConsumerState<ManageQuestionsScreen> {
@@ -34,12 +35,26 @@ class _ManageQuestionsScreenState extends ConsumerState<ManageQuestionsScreen> {
     setState(() => _loading = true);
     try {
       final params = <String, dynamic>{'limit': 100};
-      if (_filterClass != null) params['class_level'] = _filterClass;
-      if (_filterTopic != null && _filterTopic!.trim().isNotEmpty) params['topic'] = _filterTopic!.trim();
-      if (_filterDate != null) params['date'] = DateFormat('yyyy-MM-dd').format(_filterDate!);
-      final r = await dioClient.get(ApiEndpoints.questions, queryParameters: params);
-      final list = (r.data['items'] as List).map((e) => QuestionModel.fromJson(e)).toList();
-      if (mounted) setState(() { _questions = list; _loading = false; });
+      if (_filterClass != null) {
+        params['class_level'] = _filterClass;
+      }
+      if (_filterTopic != null && _filterTopic!.trim().isNotEmpty) {
+        params['topic'] = _filterTopic!.trim();
+      }
+      if (_filterDate != null) {
+        params['date'] = DateFormat('yyyy-MM-dd').format(_filterDate!);
+      }
+      final r =
+          await dioClient.get(ApiEndpoints.questions, queryParameters: params);
+      final list = (r.data['items'] as List)
+          .map((e) => QuestionModel.fromJson(e))
+          .toList();
+      if (mounted) {
+        setState(() {
+          _questions = list;
+          _loading = false;
+        });
+      }
     } catch (e) {
       if (mounted) {
         setState(() => _loading = false);
@@ -100,8 +115,11 @@ class _ManageQuestionsScreenState extends ConsumerState<ManageQuestionsScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: Text('Create Question', style: GoogleFonts.fraunces(fontSize: 20, fontWeight: FontWeight.w600)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Text('Create Question',
+              style: GoogleFonts.fraunces(
+                  fontSize: 20, fontWeight: FontWeight.w600)),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -119,7 +137,8 @@ class _ManageQuestionsScreenState extends ConsumerState<ManageQuestionsScreen> {
                 const SizedBox(height: 10),
                 TextField(
                   controller: topicCtrl,
-                  decoration: const InputDecoration(labelText: 'Topic (e.g. Algebra)'),
+                  decoration: const InputDecoration(
+                      labelText: 'Chapter (e.g. Algebra)'),
                 ),
                 const SizedBox(height: 10),
                 TextField(
@@ -133,23 +152,33 @@ class _ManageQuestionsScreenState extends ConsumerState<ManageQuestionsScreen> {
                   decoration: const InputDecoration(labelText: 'Type'),
                   items: const [
                     DropdownMenuItem(value: 'mcq', child: Text('MCQ')),
-                    DropdownMenuItem(value: 'typed', child: Text('Typed Answer')),
+                    DropdownMenuItem(
+                        value: 'typed', child: Text('Typed Answer')),
                   ],
                   onChanged: (v) => setDialogState(() => qType = v!),
                 ),
                 if (qType == 'mcq') ...[
                   const SizedBox(height: 10),
-                  TextField(controller: optionACtrl, decoration: const InputDecoration(labelText: 'Option A')),
+                  TextField(
+                      controller: optionACtrl,
+                      decoration: const InputDecoration(labelText: 'Option A')),
                   const SizedBox(height: 6),
-                  TextField(controller: optionBCtrl, decoration: const InputDecoration(labelText: 'Option B')),
+                  TextField(
+                      controller: optionBCtrl,
+                      decoration: const InputDecoration(labelText: 'Option B')),
                   const SizedBox(height: 6),
-                  TextField(controller: optionCCtrl, decoration: const InputDecoration(labelText: 'Option C')),
+                  TextField(
+                      controller: optionCCtrl,
+                      decoration: const InputDecoration(labelText: 'Option C')),
                   const SizedBox(height: 6),
-                  TextField(controller: optionDCtrl, decoration: const InputDecoration(labelText: 'Option D')),
+                  TextField(
+                      controller: optionDCtrl,
+                      decoration: const InputDecoration(labelText: 'Option D')),
                   const SizedBox(height: 10),
                   DropdownButtonFormField<int>(
                     initialValue: correctIndex,
-                    decoration: const InputDecoration(labelText: 'Correct Option'),
+                    decoration:
+                        const InputDecoration(labelText: 'Correct Option'),
                     items: const [
                       DropdownMenuItem(value: 0, child: Text('Option A')),
                       DropdownMenuItem(value: 1, child: Text('Option B')),
@@ -162,7 +191,8 @@ class _ManageQuestionsScreenState extends ConsumerState<ManageQuestionsScreen> {
                   const SizedBox(height: 10),
                   TextField(
                     onChanged: (v) => typedAnswer = v,
-                    decoration: const InputDecoration(labelText: 'Correct Answer Text'),
+                    decoration:
+                        const InputDecoration(labelText: 'Correct Answer Text'),
                   ),
                 ],
                 const SizedBox(height: 10),
@@ -174,11 +204,15 @@ class _ManageQuestionsScreenState extends ConsumerState<ManageQuestionsScreen> {
             ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel')),
             ElevatedButton(
               onPressed: () async {
-                if (textCtrl.text.trim().isEmpty || topicCtrl.text.trim().isEmpty) {
-                  showToast(context, 'Please fill in question text and topic', isError: true);
+                if (textCtrl.text.trim().isEmpty ||
+                    topicCtrl.text.trim().isEmpty) {
+                  showToast(context, 'Please fill in question text and topic',
+                      isError: true);
                   return;
                 }
                 Navigator.pop(ctx);
@@ -203,8 +237,12 @@ class _ManageQuestionsScreenState extends ConsumerState<ManageQuestionsScreen> {
                     ];
                     body['correct_index'] = correctIndex;
                     body['correct_answer_text'] = [
-                      optionACtrl.text, optionBCtrl.text, optionCCtrl.text, optionDCtrl.text
-                    ][correctIndex].trim();
+                      optionACtrl.text,
+                      optionBCtrl.text,
+                      optionCCtrl.text,
+                      optionDCtrl.text
+                    ][correctIndex]
+                        .trim();
                   } else {
                     body['correct_answer_text'] = typedAnswer.trim();
                   }
@@ -249,16 +287,20 @@ class _ManageQuestionsScreenState extends ConsumerState<ManageQuestionsScreen> {
                       child: DropdownButtonFormField<String>(
                         initialValue: _filterClass,
                         decoration: InputDecoration(
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 8),
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10)),
                           isDense: true,
                         ),
                         hint: const Text('All classes'),
                         items: const [
-                          DropdownMenuItem(value: null, child: Text('All classes')),
+                          DropdownMenuItem(
+                              value: null, child: Text('All classes')),
                           DropdownMenuItem(value: '8', child: Text('Class 8')),
                           DropdownMenuItem(value: '9', child: Text('Class 9')),
-                          DropdownMenuItem(value: '10', child: Text('Class 10')),
+                          DropdownMenuItem(
+                              value: '10', child: Text('Class 10')),
                         ],
                         onChanged: (val) {
                           setState(() => _filterClass = val);
@@ -274,13 +316,19 @@ class _ManageQuestionsScreenState extends ConsumerState<ManageQuestionsScreen> {
                           _load();
                         },
                         decoration: InputDecoration(
-                          hintText: 'Topic',
-                          hintStyle: GoogleFonts.inter(fontSize: 13, color: AppColors.slate400),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
-                              borderSide: const BorderSide(color: AppColors.slate200)),
-                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10),
-                              borderSide: const BorderSide(color: AppColors.slate200)),
+                          hintText: 'Chapter',
+                          hintStyle: GoogleFonts.inter(
+                              fontSize: 13, color: AppColors.slate400),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 8),
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide:
+                                  const BorderSide(color: AppColors.slate200)),
+                          enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide:
+                                  const BorderSide(color: AppColors.slate200)),
                           isDense: true,
                         ),
                       ),
@@ -295,26 +343,40 @@ class _ManageQuestionsScreenState extends ConsumerState<ManageQuestionsScreen> {
                         onTap: _pickDate,
                         borderRadius: BorderRadius.circular(10),
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 10),
                           decoration: BoxDecoration(
                             color: AppColors.white,
                             borderRadius: BorderRadius.circular(10),
                             border: Border.all(
-                              color: _filterDate != null ? AppColors.blue : AppColors.slate200,
+                              color: _filterDate != null
+                                  ? AppColors.blue
+                                  : AppColors.slate200,
                               width: _filterDate != null ? 1.5 : 1.0,
                             ),
                           ),
                           child: Row(
                             children: [
-                              Icon(Icons.calendar_today, size: 16, color: _filterDate != null ? AppColors.blue : AppColors.slate400),
+                              Icon(Icons.calendar_today,
+                                  size: 16,
+                                  color: _filterDate != null
+                                      ? AppColors.blue
+                                      : AppColors.slate400),
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
-                                  _filterDate != null ? DateFormat('dd MMM yyyy').format(_filterDate!) : 'Date 📅',
+                                  _filterDate != null
+                                      ? DateFormat('dd MMM yyyy')
+                                          .format(_filterDate!)
+                                      : 'Date 📅',
                                   style: GoogleFonts.inter(
                                     fontSize: 13,
-                                    color: _filterDate != null ? AppColors.navy : AppColors.slate400,
-                                    fontWeight: _filterDate != null ? FontWeight.w600 : FontWeight.normal,
+                                    color: _filterDate != null
+                                        ? AppColors.navy
+                                        : AppColors.slate400,
+                                    fontWeight: _filterDate != null
+                                        ? FontWeight.w600
+                                        : FontWeight.normal,
                                   ),
                                   overflow: TextOverflow.ellipsis,
                                 ),
@@ -325,19 +387,25 @@ class _ManageQuestionsScreenState extends ConsumerState<ManageQuestionsScreen> {
                                     setState(() => _filterDate = null);
                                     _load();
                                   },
-                                  child: const Icon(Icons.close, size: 16, color: AppColors.slate500),
+                                  child: const Icon(Icons.close,
+                                      size: 16, color: AppColors.slate500),
                                 ),
                             ],
                           ),
                         ),
                       ),
                     ),
-                    if (_filterClass != null || (_filterTopic != null && _filterTopic!.isNotEmpty) || _filterDate != null) ...[
+                    if (_filterClass != null ||
+                        (_filterTopic != null && _filterTopic!.isNotEmpty) ||
+                        _filterDate != null) ...[
                       const SizedBox(width: 10),
                       TextButton.icon(
                         onPressed: _resetFilters,
-                        icon: const Icon(Icons.restart_alt, size: 16, color: AppColors.slate600),
-                        label: Text('Clear', style: GoogleFonts.inter(fontSize: 13, color: AppColors.slate600)),
+                        icon: const Icon(Icons.restart_alt,
+                            size: 16, color: AppColors.slate600),
+                        label: Text('Clear',
+                            style: GoogleFonts.inter(
+                                fontSize: 13, color: AppColors.slate600)),
                       ),
                     ],
                   ],
@@ -350,7 +418,9 @@ class _ManageQuestionsScreenState extends ConsumerState<ManageQuestionsScreen> {
             child: _loading
                 ? const LoadingIndicator()
                 : _questions.isEmpty
-                    ? const EmptyState(message: 'No questions in bank.', icon: Icons.quiz_outlined)
+                    ? const EmptyState(
+                        message: 'No questions in bank.',
+                        icon: Icons.quiz_outlined)
                     : RefreshIndicator(
                         onRefresh: _load,
                         child: ListView.builder(
@@ -372,27 +442,45 @@ class _ManageQuestionsScreenState extends ConsumerState<ManageQuestionsScreen> {
                                   Row(
                                     children: [
                                       Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 8, vertical: 2),
                                         decoration: BoxDecoration(
                                           color: AppColors.blue.withAlpha(20),
-                                          borderRadius: BorderRadius.circular(6),
+                                          borderRadius:
+                                              BorderRadius.circular(6),
                                         ),
-                                        child: Text('Class ${q.classLevel}', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w700, color: AppColors.blue)),
+                                        child: Text('Class ${q.classLevel}',
+                                            style: GoogleFonts.inter(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.w700,
+                                                color: AppColors.blue)),
                                       ),
                                       const SizedBox(width: 6),
-                                      Text(q.topic, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.violet)),
+                                      Text(q.topic,
+                                          style: GoogleFonts.inter(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w600,
+                                              color: AppColors.violet)),
                                       const Spacer(),
                                       IconButton(
-                                        icon: const Icon(Icons.delete_outline, size: 18, color: AppColors.error),
+                                        icon: const Icon(Icons.delete_outline,
+                                            size: 18, color: AppColors.error),
                                         onPressed: () => _deleteQuestion(q.id),
                                       ),
                                     ],
                                   ),
                                   const SizedBox(height: 6),
-                                  Text(q.questionText, style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.navy)),
+                                  Text(q.questionText,
+                                      style: GoogleFonts.inter(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w600,
+                                          color: AppColors.navy)),
                                   const SizedBox(height: 6),
-                                  Text('Type: ${q.qType.toUpperCase()} | Correct: ${q.correctAnswerText ?? 'Option index ${q.correctIndex}'}',
-                                      style: GoogleFonts.inter(fontSize: 12, color: AppColors.slate500)),
+                                  Text(
+                                      'Type: ${q.qType.toUpperCase()} | Correct: ${q.correctAnswerText ?? 'Option index ${q.correctIndex}'}',
+                                      style: GoogleFonts.inter(
+                                          fontSize: 12,
+                                          color: AppColors.slate500)),
                                 ],
                               ),
                             );

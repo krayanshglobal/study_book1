@@ -211,11 +211,11 @@ export default function ManageTests() {
       payload.scheduled_date = payload.start_date;
       if (!payload.title.trim()) { toast.error("Test title is required"); return; }
       if (!payload.start_date || !payload.start_time) { toast.error("Start date and time are required"); return; }
-      const start = new Date(`${payload.start_date}T${payload.start_time}:00`);
+      const start = new Date(`${payload.start_date}T${payload.start_time}:00+05:30`);
       if (!editing && start < new Date()) { toast.error("Start date and time cannot be in the past"); return; }
       if (payload.test_type === "final") {
         if (!payload.end_date || !payload.end_time) { toast.error("Final tests require an end date and time"); return; }
-        if (new Date(`${payload.end_date}T${payload.end_time}:00`) <= start) { toast.error("End date and time must be after the start"); return; }
+        if (new Date(`${payload.end_date}T${payload.end_time}:00+05:30`) <= start) { toast.error("End date and time must be after the start"); return; }
       } else {
         payload.end_time = null;
         if (payload.end_date && payload.end_date < payload.start_date) { toast.error("End date cannot precede start date"); return; }

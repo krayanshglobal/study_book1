@@ -36,6 +36,7 @@ export default function ManageQuestions() {
 
   // Published & Draft questions list
   const [items, setItems] = useState([]);
+  const [chapters, setChapters] = useState([]);
   const [filter, setFilter] = useState({ class_level: adminClass, topic: "", question_number: "", status: "all", difficulty: "all", premium: "all", created_from: "", created_to: "", published_from: "", published_to: "" });
   const loadRequestId = useRef(0);
   const [selected, setSelected] = useState([]);
@@ -70,12 +71,29 @@ export default function ManageQuestions() {
     setSelected((current) => current.filter((id) => (r.data.items || []).some((q) => q._id === id)));
   };
 
+  const loadChapters = async () => {
+    try {
+      const params = {};
+      if (filter.class_level !== "all") params.class_level = filter.class_level;
+      const response = await api.get("/api/questions/topics", { params });
+      const unique = [...new Set(
+        (response.data.topics || [])
+          .map((item) => String(item.topic || "").trim())
+          .filter(Boolean)
+      )].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+      setChapters(unique);
+    } catch {
+      setChapters([]);
+    }
+  };
+
   const handleDifficultyChange = (level) => {
     setForm((s) => ({ ...s, difficulty: level }));
   };
 
   useEffect(() => { setFilter((f) => ({ ...f, class_level: adminClass })); }, [adminClass]);
   useEffect(() => { load(); }, [filter]); // eslint-disable-line
+  useEffect(() => { loadChapters(); }, [filter.class_level]); // eslint-disable-line
 
   const togglePublish = async (id) => {
     try {
@@ -253,7 +271,7 @@ maths,10,Quadratic,1.2,"Discriminant of $ax^2+bx+c$?",typed,,,,,,b^2-4ac,"D = b^
             <SelectContent>{["8","9","10"].map((c) => <SelectItem key={c} value={c}>Class {c}</SelectItem>)}</SelectContent>
           </Select>
         </div>
-        <div><Label>Topic</Label><Input data-testid="q-topic-input" className="mt-1" value={form.topic} onChange={(e) => setF("topic", e.target.value)} placeholder="Algebra" /></div>
+        <div><Label>Chapter</Label><Input data-testid="q-topic-input" className="mt-1" value={form.topic} onChange={(e) => setF("topic", e.target.value)} placeholder="Algebra" /></div>
         <div><Label>Question number</Label><Input data-testid="q-number-input" className="mt-1" inputMode="decimal" value={form.question_number || ""} onChange={(e) => setF("question_number", e.target.value)} placeholder="1.1" /></div>
         <div><Label>Type</Label>
           <Select value={form.q_type} onValueChange={(v) => setF("q_type", v)}>
@@ -539,7 +557,7 @@ maths,10,Quadratic,1.2,"Discriminant of $ax^2+bx+c$?",typed,,,,,,b^2-4ac,"D = b^
 
       {/* Filter bar */}
       <div className="mt-6 flex gap-3 flex-wrap items-center">
-        <Select value={filter.class_level} onValueChange={(v) => setFilter({ ...filter, class_level: v })}>
+        <Select value={filter.class_level} onValueChange={(v) => setFilter({ ...filter, class_level: v, topic: "" })}>
           <SelectTrigger className="w-40 rounded-full"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All classes</SelectItem>
@@ -574,7 +592,13 @@ maths,10,Quadratic,1.2,"Discriminant of $ax^2+bx+c$?",typed,,,,,,b^2-4ac,"D = b^
           <SelectTrigger className="w-40 rounded-full bg-white"><SelectValue /></SelectTrigger>
           <SelectContent><SelectItem value="all">All access</SelectItem><SelectItem value="free">Free</SelectItem><SelectItem value="premium">Premium</SelectItem></SelectContent>
         </Select>
-        <Input placeholder="Filter by topic…" className="w-56 rounded-full" value={filter.topic} onChange={(e) => setFilter({ ...filter, topic: e.target.value })} />
+        <Select value={filter.topic || "all"} onValueChange={(v) => setFilter({ ...filter, topic: v === "all" ? "" : v })}>
+          <SelectTrigger className="w-56 rounded-full bg-white"><SelectValue placeholder="All chapters" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All chapters</SelectItem>
+            {chapters.map((chapter) => <SelectItem key={chapter} value={chapter}>{chapter}</SelectItem>)}
+          </SelectContent>
+        </Select>
         <Input
           aria-label="Filter by question number"
           data-testid="question-number-filter"
@@ -612,7 +636,7 @@ maths,10,Quadratic,1.2,"Discriminant of $ax^2+bx+c$?",typed,,,,,,b^2-4ac,"D = b^
               <input type="checkbox" className="mt-1 w-4 h-4 accent-[#7C3AED]" checked={selected.includes(q._id)} onChange={(e) => setSelected((s) => e.target.checked ? [...s, q._id] : s.filter((id) => id !== q._id))} />
               <div className="flex-1">
                 <div className="flex items-center gap-2 text-xs text-[#64748B] flex-wrap">
-                  <span className="uppercase tracking-widest text-[#7C3AED] font-semibold">{q.topic || "No topic"}</span>
+                  <span className="uppercase tracking-widest text-[#7C3AED] font-semibold">{q.topic || "No chapter"}</span>
                   {q.question_number && <span className="font-mono font-semibold text-[#0F1B4C]">No. {q.question_number}</span>}
                   <span>· Class {q.class_level}</span>
                   <span>· {q.q_type?.toUpperCase()}</span>

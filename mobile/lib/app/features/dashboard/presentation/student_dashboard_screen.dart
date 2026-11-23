@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,7 +8,6 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../../core/api/api_endpoints.dart';
 import '../../../core/api/dio_client.dart';
-import '../../../core/config/app_config.dart';
 import '../../../core/models/promo_model.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../auth/providers/auth_provider.dart';
@@ -37,16 +37,20 @@ DateTime? _parseTestTime(Map t, String field) {
   try {
     final date = t['scheduled_date'] as String;
     final time = (t[field] as String?) ?? '20:00';
-    return DateTime.parse('${date}T$time:00Z');
+    // Test date/time fields are entered and stored as IST wall-clock values.
+    return DateTime.parse('${date}T$time:00+05:30');
   } catch (_) {
     return null;
   }
 }
 
+DateTime _inIst(DateTime value) =>
+    value.toUtc().add(const Duration(hours: 5, minutes: 30));
+
 String _fmtDate(DateTime dt) {
-  final now = DateTime.now();
-  final local = dt.toLocal();
-  final diff = DateTime(local.year, local.month, local.day)
+  final now = _inIst(DateTime.now());
+  final ist = _inIst(dt);
+  final diff = DateTime(ist.year, ist.month, ist.day)
       .difference(DateTime(now.year, now.month, now.day))
       .inDays;
   if (diff == 0) return 'Today';
@@ -66,15 +70,15 @@ String _fmtDate(DateTime dt) {
     'Nov',
     'Dec'
   ];
-  return '${local.day} ${months[local.month]}';
+  return '${ist.day} ${months[ist.month]}';
 }
 
 String _fmtTime(DateTime dt) {
-  final local = dt.toLocal();
-  final h = local.hour % 12 == 0 ? 12 : local.hour % 12;
-  final m = local.minute.toString().padLeft(2, '0');
-  final ampm = local.hour < 12 ? 'AM' : 'PM';
-  return '$h:$m $ampm';
+  final ist = _inIst(dt);
+  final h = ist.hour % 12 == 0 ? 12 : ist.hour % 12;
+  final m = ist.minute.toString().padLeft(2, '0');
+  final ampm = ist.hour < 12 ? 'AM' : 'PM';
+  return '$h:$m $ampm IST';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -331,14 +335,6 @@ class _State extends ConsumerState<StudentDashboardScreen> {
                           isPremiumOnly: true,
                         ),
                         _QuickItem(
-                          icon: Icons.quiz_rounded,
-                          label: 'Question\nBank',
-                          color: Color(0xFFF3E8FF),
-                          iconColor: Color(0xFF7C3AED),
-                          route: '/questions',
-                          isPremiumOnly: true,
-                        ),
-                        _QuickItem(
                           icon: Icons.assignment_rounded,
                           label: 'Tests',
                           color: Color(0xFFE6F4EA),
@@ -558,10 +554,7 @@ class _CompactAnnouncementBanner extends StatelessWidget {
               itemBuilder: (context, i) {
                 final a = announcements[i];
                 final title = (a['title'] as String?) ?? '';
-                final rawImageUrl = (a['image_url'] as String?) ?? '';
-                final imageUrl = rawImageUrl.startsWith('/api/')
-                    ? '${AppConfig.baseUrl}$rawImageUrl'
-                    : rawImageUrl;
+                final imageUrl = (a['image_url'] as String?)?.trim() ?? '';
                 final createdAt = a['created_at'] as String?;
                 String dateStr = '';
                 if (createdAt != null) {
@@ -593,17 +586,7 @@ class _CompactAnnouncementBanner extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         if (imageUrl.isNotEmpty) ...[
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: Image.network(
-                              imageUrl,
-                              width: 48,
-                              height: 48,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) =>
-                                  const SizedBox.shrink(),
-                            ),
-                          ),
+                          _AnnouncementImage(imageUrl: imageUrl),
                           const SizedBox(width: 9),
                         ],
                         Flexible(
@@ -649,6 +632,101 @@ class _CompactAnnouncementBanner extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 // 3a. Offers Card (when promos exist)
 // ─────────────────────────────────────────────────────────────────────────────
+
+class _AnnouncementImage extends StatefulWidget {
+  final String imageUrl;
+
+  const _AnnouncementImage({required this.imageUrl});
+
+  @override
+  State<_AnnouncementImage> createState() => _AnnouncementImageState();
+}
+
+class _AnnouncementImageState extends State<_AnnouncementImage> {
+  Future<Uint8List>? _internalImage;
+
+  bool get _isInternal => widget.imageUrl.startsWith('/');
+
+  @override
+  void initState() {
+    super.initState();
+    if (_isInternal) _internalImage = _loadInternalImage();
+  }
+
+  @override
+  void didUpdateWidget(covariant _AnnouncementImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.imageUrl != widget.imageUrl) {
+      _internalImage = _isInternal ? _loadInternalImage() : null;
+    }
+  }
+
+  Future<Uint8List> _loadInternalImage() async {
+    final response = await dioClient.get(
+      widget.imageUrl,
+      options: Options(
+        responseType: ResponseType.bytes,
+        headers: const {'Accept': 'image/*'},
+      ),
+    );
+    final bytes = response.data;
+    if (bytes is Uint8List) return bytes;
+    if (bytes is List<int>) return Uint8List.fromList(bytes);
+    throw StateError('The announcement image response was not binary data.');
+  }
+
+  Widget _fallback() => Container(
+        width: 48,
+        height: 48,
+        decoration: BoxDecoration(
+          color: Colors.white.withAlpha(24),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: const Icon(
+          Icons.image_not_supported_outlined,
+          size: 20,
+          color: Colors.white70,
+        ),
+      );
+
+  Widget _frame(Widget image) => ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: SizedBox(width: 48, height: 48, child: image),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_isInternal) {
+      return _frame(Image.network(
+        widget.imageUrl,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => _fallback(),
+      ));
+    }
+
+    return FutureBuilder<Uint8List>(
+      future: _internalImage,
+      builder: (context, snapshot) {
+        if (snapshot.hasData) {
+          return _frame(Image.memory(snapshot.data!, fit: BoxFit.cover));
+        }
+        if (snapshot.hasError) return _fallback();
+        return _frame(Container(
+          color: Colors.white.withAlpha(18),
+          alignment: Alignment.center,
+          child: const SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: Colors.white70,
+            ),
+          ),
+        ));
+      },
+    );
+  }
+}
 
 class _OffersCard extends StatelessWidget {
   final PromoModel promo;

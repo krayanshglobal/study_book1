@@ -70,6 +70,9 @@ async def list_topics(class_level: Optional[str] = None, category: Optional[str]
     match = {}
     if class_level:
         match["class_level"] = str(class_level)
+    # Chapters are stored in the legacy `topic` field. Do not expose blank
+    # values as selectable chapters in clients.
+    match["topic"] = {"$nin": [None, ""]}
 
     if category == "question_bank":
         match["$or"] = [
@@ -87,9 +90,12 @@ async def list_topics(class_level: Optional[str] = None, category: Optional[str]
     ]
     out = []
     async for doc in db.questions.aggregate(pipeline):
+        topic = str(doc["_id"].get("topic") or "").strip()
+        if not topic:
+            continue
         out.append({
             "class_level": doc["_id"]["class_level"],
-            "topic": doc["_id"]["topic"],
+            "topic": topic,
             "count": doc["count"],
         })
     return {"topics": out}
@@ -267,6 +273,25 @@ async def list_questions(
     items = [_ser(x) async for x in cursor]
     total = await db.questions.count_documents(q)
 
+    attempt_map = {}
+    if user["role"] == "student" and items:
+        question_ids = [item["_id"] for item in items]
+        attempts = await db.question_attempts.find(
+            {
+                "user_id": str(user["_id"]),
+                "question_id": {"$in": question_ids},
+            },
+            {
+                "question_id": 1,
+                "is_correct": 1,
+                "selected_index": 1,
+                "typed_answer": 1,
+                "points_earned": 1,
+                "solved_at": 1,
+            },
+        ).to_list(length=len(question_ids))
+        attempt_map = {attempt["question_id"]: attempt for attempt in attempts}
+
     # Attach 24h countdown only for daily_24h category; hide correct answer for non-admin students
     now_utc = datetime.now(timezone.utc)
     for it in items:
@@ -290,6 +315,20 @@ async def list_questions(
             it["is_expired"] = False
 
         if user["role"] == "student":
+            attempt = attempt_map.get(it["_id"])
+            if attempt:
+                # Correct-answer details are revealed only after this student
+                # has submitted the question at least once.
+                it["attempt"] = {
+                    "correct": bool(attempt.get("is_correct")),
+                    "selected_index": attempt.get("selected_index"),
+                    "typed_answer": attempt.get("typed_answer"),
+                    "points_earned": attempt.get("points_earned", 0),
+                    "solved_at": attempt.get("solved_at"),
+                    "correct_index": it.get("correct_index"),
+                    "correct_answer_text": it.get("correct_answer_text"),
+                    "explanation": it.get("explanation"),
+                }
             it.pop("correct_index", None)
             it.pop("correct_answer_text", None)
             it.pop("explanation", None)

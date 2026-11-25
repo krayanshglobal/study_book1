@@ -37,7 +37,7 @@ export default function ManageQuestions() {
   // Published & Draft questions list
   const [items, setItems] = useState([]);
   const [chapters, setChapters] = useState([]);
-  const [filter, setFilter] = useState({ class_level: adminClass, topic: "", question_number: "", status: "all", difficulty: "all", premium: "all", created_from: "", created_to: "", published_from: "", published_to: "" });
+  const [filter, setFilter] = useState({ class_level: adminClass, topic: "", question_number: "", status: "all", difficulty: "all", premium: "all", date_type: "created", created_from: "", created_to: "", published_from: "", published_to: "" });
   const loadRequestId = useRef(0);
   const [selected, setSelected] = useState([]);
 
@@ -608,10 +608,43 @@ maths,10,Quadratic,1.2,"Discriminant of $ax^2+bx+c$?",typed,,,,,,b^2-4ac,"D = b^
           value={filter.question_number}
           onChange={(e) => setFilter({ ...filter, question_number: e.target.value })}
         />
-        <Input type="date" title="Created from" className="w-40 rounded-full" value={filter.created_from} onChange={(e) => setFilter({ ...filter, created_from: e.target.value })} />
-        <Input type="date" title="Created to" className="w-40 rounded-full" value={filter.created_to} onChange={(e) => setFilter({ ...filter, created_to: e.target.value })} />
-        <Input type="date" title="Published from" className="w-40 rounded-full" value={filter.published_from} onChange={(e) => setFilter({ ...filter, published_from: e.target.value })} />
-        <Input type="date" title="Published to" className="w-40 rounded-full" value={filter.published_to} onChange={(e) => setFilter({ ...filter, published_to: e.target.value })} />
+        <Select
+          value={filter.date_type}
+          onValueChange={(value) => setFilter({
+            ...filter,
+            date_type: value,
+            created_from: "",
+            created_to: "",
+            published_from: "",
+            published_to: "",
+          })}
+        >
+          <SelectTrigger className="w-40 rounded-full bg-white"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="created">Created date</SelectItem>
+            <SelectItem value="published">Published date</SelectItem>
+          </SelectContent>
+        </Select>
+        <label className="flex items-center gap-2 text-xs font-medium text-slate-500">
+          From
+          <Input
+            type="date"
+            aria-label={`${filter.date_type} date from`}
+            className="w-40 rounded-full bg-white"
+            value={filter[`${filter.date_type}_from`]}
+            onChange={(e) => setFilter({ ...filter, [`${filter.date_type}_from`]: e.target.value })}
+          />
+        </label>
+        <label className="flex items-center gap-2 text-xs font-medium text-slate-500">
+          To
+          <Input
+            type="date"
+            aria-label={`${filter.date_type} date to`}
+            className="w-40 rounded-full bg-white"
+            value={filter[`${filter.date_type}_to`]}
+            onChange={(e) => setFilter({ ...filter, [`${filter.date_type}_to`]: e.target.value })}
+          />
+        </label>
         <div className="text-sm text-[#64748B] ml-auto self-center font-medium">{items.length} total questions</div>
       </div>
 

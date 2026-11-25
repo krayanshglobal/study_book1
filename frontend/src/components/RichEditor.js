@@ -37,7 +37,7 @@ export default function RichEditor({ value = "", onChange, placeholder = "Type o
     fd.append("file", file);
     try {
       const r = await api.post("/api/uploads/image", fd, { headers: { "Content-Type": "multipart/form-data" } });
-      const url = `${process.env.REACT_APP_BACKEND_URL}${r.data.url}`;
+      const url = `${process.env.REACT_APP_BACKEND_URL || "http://localhost:8000"}${r.data.url}`;
       editor.chain().focus().setImage({ src: url }).run();
     } catch (err) {
       toast.error(formatApiError(err));

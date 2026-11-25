@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../../../core/api/api_endpoints.dart';
 import '../../../core/api/dio_client.dart';
+import '../../../core/config/app_config.dart';
 import '../../../core/models/question_model.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../auth/providers/auth_provider.dart';
@@ -77,7 +78,6 @@ class _QuestionBankState extends ConsumerState<QuestionBankScreen> {
   // Tracks which question IDs the student has answered in this session.
   // Updated immediately when a student submits any answer (correct or not).
   final Set<String> _answeredIds = {};
-  List<Map<String, dynamic>> _todayAttempts = [];
 
   void _markAnswered(String id) {
     if (!_answeredIds.contains(id)) {
@@ -89,13 +89,10 @@ class _QuestionBankState extends ConsumerState<QuestionBankScreen> {
   Future<void> _refreshDailyStatus() async {
     try {
       final response = await dioClient.get(ApiEndpoints.dailyPractice);
-      final attempts = List<Map<String, dynamic>>.from(
-          response.data['attended_questions'] ?? const []);
       final attemptedIds = List<String>.from(
           (response.data['attempted_ids'] ?? const []).map((id) => '$id'));
       if (!mounted) return;
       setState(() {
-        _todayAttempts = attempts;
         _answeredIds.addAll(attemptedIds);
       });
     } catch (_) {}
@@ -436,9 +433,6 @@ class _QuestionBankState extends ConsumerState<QuestionBankScreen> {
               ),
             ),
 
-          if (widget.dailyOnly && _todayAttempts.isNotEmpty)
-            _TodayAttemptsPanel(attempts: _todayAttempts),
-
           // Questions list
           Expanded(
             child: _loading && _questions.isEmpty
@@ -486,92 +480,40 @@ class _QuestionBankState extends ConsumerState<QuestionBankScreen> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-class _TodayAttemptsPanel extends StatelessWidget {
-  final List<Map<String, dynamic>> attempts;
+class _QuestionImage extends StatelessWidget {
+  final String imageUrl;
 
-  const _TodayAttemptsPanel({required this.attempts});
+  const _QuestionImage({required this.imageUrl});
+
+  String get _resolvedUrl {
+    final value = imageUrl.trim();
+    if (value.startsWith('http://') || value.startsWith('https://')) {
+      return value;
+    }
+    if (value.startsWith('/')) return '${AppConfig.baseUrl}$value';
+    return '${AppConfig.baseUrl}/$value';
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 150,
-      margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.slate200),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text("Today's Attended Questions",
-              style: GoogleFonts.fraunces(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.navy)),
-          const SizedBox(height: 8),
-          Expanded(
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: attempts.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 8),
-              itemBuilder: (_, index) {
-                final attempt = attempts[index];
-                final correct = attempt['is_correct'] == true;
-                return Container(
-                  width: 245,
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: (correct ? AppColors.success : AppColors.error)
-                        .withAlpha(12),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                        color: (correct ? AppColors.success : AppColors.error)
-                            .withAlpha(55)),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(children: [
-                        Icon(correct ? Icons.check_circle : Icons.cancel,
-                            size: 15,
-                            color:
-                                correct ? AppColors.success : AppColors.error),
-                        const SizedBox(width: 5),
-                        Expanded(
-                          child: Text(
-                              _plainTextFromHtml(attempt['question_text'] ??
-                                  'Question ${index + 1}'),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: GoogleFonts.inter(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppColors.navy)),
-                        ),
-                      ]),
-                      const SizedBox(height: 5),
-                      Text(
-                          'Your answer: ${_plainTextFromHtml(attempt['user_answer'] ?? 'Not available')}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.inter(
-                              fontSize: 10, color: AppColors.slate700)),
-                      if (!correct)
-                        Text(
-                            'Correct: ${_plainTextFromHtml(attempt['correct_answer'] ?? 'Not available')}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: GoogleFonts.inter(
-                                fontSize: 10, color: AppColors.success)),
-                    ],
-                  ),
-                );
-              },
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        width: double.infinity,
+        constraints: const BoxConstraints(maxHeight: 260),
+        color: AppColors.slate50,
+        child: Image.network(
+          _resolvedUrl,
+          fit: BoxFit.contain,
+          errorBuilder: (_, __, ___) => Container(
+            height: 72,
+            alignment: Alignment.center,
+            child: Text(
+              'Question image could not be loaded',
+              style: GoogleFonts.inter(fontSize: 11, color: AppColors.slate700),
             ),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -697,6 +639,7 @@ class _QuestionCardState extends State<_QuestionCard> {
   @override
   Widget build(BuildContext context) {
     final q = widget.question;
+    final questionImages = q.imageUrls;
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
@@ -725,6 +668,13 @@ class _QuestionCardState extends State<_QuestionCard> {
             const SizedBox(height: 12),
             Text(_plainTextFromHtml(q.questionText),
                 style: GoogleFonts.inter(fontSize: 14, color: AppColors.navy)),
+            if (questionImages.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              ...questionImages.map((imageUrl) => Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: _QuestionImage(imageUrl: imageUrl),
+                  )),
+            ],
             const SizedBox(height: 12),
 
             // MCQ options

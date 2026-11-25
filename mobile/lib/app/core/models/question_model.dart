@@ -53,6 +53,27 @@ class QuestionModel {
     this.attempt,
   });
 
+  /// Images may be stored either in [imageUrl] or embedded by the admin rich
+  /// text editor as an `<img>` element inside [questionText].
+  List<String> get imageUrls {
+    final urls = <String>[];
+
+    void addUrl(String? value) {
+      final url = value?.trim().replaceAll('&amp;', '&') ?? '';
+      if (url.isNotEmpty && !urls.contains(url)) urls.add(url);
+    }
+
+    addUrl(imageUrl);
+    final imagePattern = RegExp(
+      r'''<img\b[^>]*\bsrc\s*=\s*["']([^"']+)["'][^>]*>''',
+      caseSensitive: false,
+    );
+    for (final match in imagePattern.allMatches(questionText)) {
+      addUrl(match.group(1));
+    }
+    return urls;
+  }
+
   factory QuestionModel.fromJson(Map<String, dynamic> json) {
     final rawOptions = json['options'];
     final parsedOptions = <QuestionOption>[];

@@ -11,8 +11,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { toast } from "sonner";
-import { Plus, Trash2, Pencil, ClipboardCheck, ClipboardList, RefreshCw, ArrowLeft } from "lucide-react";
+import { Plus, Trash2, Pencil, ClipboardCheck, ClipboardList, RefreshCw, ArrowLeft, Check, ChevronsUpDown } from "lucide-react";
 import RichEditor from "@/components/RichEditor";
 
 const empty = {
@@ -34,6 +36,49 @@ const emptyQ = {
   image_url: "",
   allow_file_upload: false,
 };
+
+function SearchableTopicFilter({ value, topics, onChange }) {
+  const [open, setOpen] = useState(false);
+  const selectedLabel = value === "all" ? "All topics" : value;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          aria-label="Search and select a topic"
+          className="w-full justify-between bg-white px-3 font-normal"
+        >
+          <span className="truncate">{selectedLabel}</span>
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+        <Command>
+          <CommandInput placeholder="Search topic or chapter..." />
+          <CommandList>
+            <CommandEmpty>No matching topic found.</CommandEmpty>
+            <CommandGroup>
+              <CommandItem value="all topics" onSelect={() => { onChange("all"); setOpen(false); }}>
+                <Check className={`mr-2 h-4 w-4 ${value === "all" ? "opacity-100" : "opacity-0"}`} />
+                All topics
+              </CommandItem>
+              {topics.map((topic) => (
+                <CommandItem key={topic} value={topic} onSelect={() => { onChange(topic); setOpen(false); }}>
+                  <Check className={`mr-2 h-4 w-4 ${value === topic ? "opacity-100" : "opacity-0"}`} />
+                  {topic}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 export default function ManageTests() {
   const [activeClass, setActiveClass] = useState(localStorage.getItem("admin_class_level") || "8");
@@ -653,7 +698,11 @@ export default function ManageTests() {
                   <div className="mt-3 space-y-3">
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-2 rounded-xl bg-slate-50 border border-slate-200 p-3">
                       <Select value={questionFilters.difficulty} onValueChange={(v) => setQuestionFilters((f) => ({ ...f, difficulty: v }))}><SelectTrigger><SelectValue placeholder="Difficulty" /></SelectTrigger><SelectContent><SelectItem value="all">All difficulties</SelectItem><SelectItem value="easy">Easy</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="hard">Hard</SelectItem></SelectContent></Select>
-                      <Select value={questionFilters.topic} onValueChange={(v) => setQuestionFilters((f) => ({ ...f, topic: v }))}><SelectTrigger><SelectValue placeholder="Topic/chapter" /></SelectTrigger><SelectContent><SelectItem value="all">All topics</SelectItem>{topics.map((topic) => <SelectItem key={topic} value={topic}>{topic}</SelectItem>)}</SelectContent></Select>
+                      <SearchableTopicFilter
+                        value={questionFilters.topic}
+                        topics={topics}
+                        onChange={(topic) => setQuestionFilters((filters) => ({ ...filters, topic }))}
+                      />
                       <Select value={questionFilters.category} onValueChange={(v) => setQuestionFilters((f) => ({ ...f, category: v }))}><SelectTrigger><SelectValue placeholder="Destination" /></SelectTrigger><SelectContent><SelectItem value="all">All destinations</SelectItem><SelectItem value="question_bank">Question Bank</SelectItem><SelectItem value="daily_24h">Daily 24h</SelectItem><SelectItem value="draft">Drafts</SelectItem></SelectContent></Select>
                       <Select value={questionFilters.premium} onValueChange={(v) => setQuestionFilters((f) => ({ ...f, premium: v }))}><SelectTrigger><SelectValue placeholder="Access" /></SelectTrigger><SelectContent><SelectItem value="all">All access</SelectItem><SelectItem value="free">Free</SelectItem><SelectItem value="premium">Premium</SelectItem></SelectContent></Select>
                       <Input type="date" title="Created date" value={questionFilters.createdDate} onChange={(e) => setQuestionFilters((f) => ({ ...f, createdDate: e.target.value }))} />

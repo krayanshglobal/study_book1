@@ -89,7 +89,10 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
       // ── Upcoming Tests → Reminders ────────────────────────────────────────
       try {
         final resp = await dioClient.get(ApiEndpoints.upcomingTests);
-        final items = (resp.data as List?) ?? [];
+        final responseData = resp.data;
+        final items = responseData is Map
+            ? (responseData['items'] as List? ?? const [])
+            : (responseData as List? ?? const []);
         for (final item in items) {
           final id = 'test_${item['_id'] ?? item['id']}';
           final title = item['title'] as String? ?? 'Upcoming Test';
@@ -98,10 +101,11 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
           notifs.add(AppNotification(
             id: id,
             type: NotifType.testReminder,
-            title: 'Test Reminder: $title',
-            body: 'Scheduled on $date${time.isNotEmpty ? ' at $time' : ''}. Tap to view.',
-            timestamp: _parseDate(
-                item['created_at'] as String? ?? DateTime.now().toIso8601String()),
+            title: 'New Test: $title',
+            body:
+                'Scheduled on $date${time.isNotEmpty ? ' at $time' : ''}. Tap to view.',
+            timestamp: _parseDate(item['created_at'] as String? ??
+                DateTime.now().toIso8601String()),
             isRead: readIds.contains(id),
           ));
         }
@@ -148,14 +152,16 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
     final readIds = state.notifications.map((n) => n.id).toSet();
     await _saveReadIds(readIds);
 
-    final updated = state.notifications.map((n) => AppNotification(
-          id: n.id,
-          type: n.type,
-          title: n.title,
-          body: n.body,
-          timestamp: n.timestamp,
-          isRead: true,
-        )).toList();
+    final updated = state.notifications
+        .map((n) => AppNotification(
+              id: n.id,
+              type: n.type,
+              title: n.title,
+              body: n.body,
+              timestamp: n.timestamp,
+              isRead: true,
+            ))
+        .toList();
 
     state = state.copyWith(notifications: updated);
   }

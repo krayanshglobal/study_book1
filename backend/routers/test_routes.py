@@ -101,6 +101,24 @@ async def list_tests(
         q["is_published"] = True
         if user.get("class_level"):
             q["class_level"] = user["class_level"]
+
+        # Once a student submits a practice/mock test, it is complete and
+        # should not be offered again when the test list is reopened.
+        submitted_test_ids = []
+        async for attempt in db.test_attempts.find(
+            {"user_id": user["_id"], "submitted_at": {"$ne": None}},
+            {"test_id": 1},
+        ):
+            test_id = attempt.get("test_id")
+            if isinstance(test_id, ObjectId):
+                submitted_test_ids.append(test_id)
+            elif ObjectId.is_valid(str(test_id or "")):
+                submitted_test_ids.append(ObjectId(str(test_id)))
+        if submitted_test_ids:
+            q["$or"] = [
+                {"test_type": {"$ne": "mock"}},
+                {"_id": {"$nin": submitted_test_ids}},
+            ]
     else:
         if class_level:
             q["class_level"] = class_level
@@ -149,7 +167,26 @@ async def upcoming(user=Depends(require_premium)):
     q: dict = {"is_published": True, "scheduled_date": {"$gte": today}}
     if user.get("class_level"):
         q["class_level"] = user["class_level"]
-    cursor = db.tests.find(q).sort("scheduled_date", 1).limit(10)
+
+    if user.get("role") == "student":
+        submitted_test_ids = []
+        async for attempt in db.test_attempts.find(
+            {"user_id": user["_id"], "submitted_at": {"$ne": None}},
+            {"test_id": 1},
+        ):
+            test_id = attempt.get("test_id")
+            if isinstance(test_id, ObjectId):
+                submitted_test_ids.append(test_id)
+            elif ObjectId.is_valid(str(test_id or "")):
+                submitted_test_ids.append(ObjectId(str(test_id)))
+        if submitted_test_ids:
+            q["$or"] = [
+                {"test_type": {"$ne": "mock"}},
+                {"_id": {"$nin": submitted_test_ids}},
+            ]
+
+    # Include every relevant newly published test in the notification feed.
+    cursor = db.tests.find(q).sort("scheduled_date", 1).limit(100)
     return {"items": [_ser(t) async for t in cursor]}
 
 

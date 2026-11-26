@@ -500,8 +500,17 @@ async def delete_test(tid: str, admin=Depends(require_role("admin", "superadmin"
 
 
 @router.get("/{tid}/leaderboard")
-async def test_leaderboard(tid: str, _=Depends(require_premium)):
+async def test_leaderboard(tid: str, user=Depends(require_premium)):
     from server import db
+
+    test = await db.tests.find_one({"_id": _safe_oid(tid, "test ID")})
+    if not test:
+        raise HTTPException(status_code=404, detail="Test not found")
+
+    test_class_level = str(test.get("class_level") or "").strip()
+    if user["role"] == "student" and test_class_level != str(user.get("class_level") or "").strip():
+        raise HTTPException(status_code=403, detail="Access denied to this class leaderboard")
+
     cursor = db.test_attempts.find({"test_id": tid, "submitted_at": {"$ne": None}}).sort("score", -1).limit(100)
     out = []
     rank = 1
@@ -511,12 +520,14 @@ async def test_leaderboard(tid: str, _=Depends(require_premium)):
             u = await db.users.find_one({"_id": ObjectId(a["user_id"])})
         except Exception:
             pass
+        if not u or u.get("role") != "student" or str(u.get("class_level") or "").strip() != test_class_level:
+            continue
         out.append({
             "attempt_id": str(a["_id"]),
             "rank": rank,
             "user_id": a["user_id"],
-            "name": u["name"] if u else "Student",
-            "class_level": u.get("class_level") if u else None,
+            "name": u["name"],
+            "class_level": u.get("class_level"),
             "score": a.get("score", 0),
             "percent": a.get("percent", 0),
             "submitted_at": a.get("submitted_at"),

@@ -592,13 +592,30 @@ maths,10,Quadratic,1.2,"Discriminant of $ax^2+bx+c$?",typed,,,,,,b^2-4ac,"D = b^
           <SelectTrigger className="w-40 rounded-full bg-white"><SelectValue /></SelectTrigger>
           <SelectContent><SelectItem value="all">All access</SelectItem><SelectItem value="free">Free</SelectItem><SelectItem value="premium">Premium</SelectItem></SelectContent>
         </Select>
-        <Select value={filter.topic || "all"} onValueChange={(v) => setFilter({ ...filter, topic: v === "all" ? "" : v })}>
-          <SelectTrigger className="w-56 rounded-full bg-white"><SelectValue placeholder="All chapters" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All chapters</SelectItem>
-            {chapters.map((chapter) => <SelectItem key={chapter} value={chapter}>{chapter}</SelectItem>)}
-          </SelectContent>
-        </Select>
+        <div className="relative">
+          <Input
+            aria-label="Search questions by chapter"
+            data-testid="chapter-filter"
+            list="question-chapter-suggestions"
+            placeholder="Search chapter (e.g. U12)"
+            className="w-64 rounded-full bg-white pr-9"
+            value={filter.topic}
+            onChange={(e) => setFilter({ ...filter, topic: e.target.value })}
+          />
+          {filter.topic && (
+            <button
+              type="button"
+              aria-label="Clear chapter filter"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
+              onClick={() => setFilter({ ...filter, topic: "" })}
+            >
+              ×
+            </button>
+          )}
+          <datalist id="question-chapter-suggestions">
+            {chapters.map((chapter) => <option key={chapter} value={chapter} />)}
+          </datalist>
+        </div>
         <Input
           aria-label="Filter by question number"
           data-testid="question-number-filter"

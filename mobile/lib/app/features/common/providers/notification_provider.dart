@@ -11,6 +11,7 @@ import '../../../core/models/notification_model.dart';
 // Aggregates notifications from existing APIs:
 //   /api/announcements     → NotifType.announcement
 //   /api/tests/upcoming    → NotifType.testReminder
+//   /api/questions (daily) → NotifType.dailyPractice
 //
 // Read state is persisted locally via shared_preferences so the badge count
 // and unread indicators survive app restarts without any backend changes.
@@ -106,6 +107,44 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
                 'Scheduled on $date${time.isNotEmpty ? ' at $time' : ''}. Tap to view.',
             timestamp: _parseDate(item['created_at'] as String? ??
                 DateTime.now().toIso8601String()),
+            isRead: readIds.contains(id),
+          ));
+        }
+      } catch (_) {}
+
+      // ── Daily Practice Questions → Notifications ────────────────────
+      try {
+        final resp = await dioClient.get(
+          ApiEndpoints.questions,
+          queryParameters: const {'category': 'daily_24h', 'limit': 100},
+        );
+        final responseData = resp.data;
+        final items = responseData is Map
+            ? (responseData['items'] as List? ?? const [])
+            : (responseData as List? ?? const []);
+        for (final item in items) {
+          final questionId = item['_id'] ?? item['id'];
+          if (questionId == null) continue;
+          final id = 'daily_$questionId';
+          final topic = item['topic']?.toString().trim();
+          final number = item['question_number']?.toString().trim();
+          final detail = [
+            if (number != null && number.isNotEmpty) 'Question $number',
+            if (topic != null && topic.isNotEmpty) topic,
+          ].join(' • ');
+          notifs.add(AppNotification(
+            id: id,
+            type: NotifType.dailyPractice,
+            title: 'New Daily Practice Available',
+            body: detail.isEmpty
+                ? 'A new daily question is ready. Tap to practise now.'
+                : '$detail is ready. Tap to practise now.',
+            timestamp: _parseDate(
+              item['published_at']?.toString() ??
+                  item['updated_at']?.toString() ??
+                  item['created_at']?.toString() ??
+                  DateTime.now().toIso8601String(),
+            ),
             isRead: readIds.contains(id),
           ));
         }

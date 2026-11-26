@@ -136,6 +136,12 @@ async def leaderboard(
     # ── Release-gate: students only see leaderboard if admin released it ──
     is_admin = user["role"] in ("admin", "superadmin")
 
+    # Never trust a class supplied by a student.  A student's leaderboard is
+    # always scoped to the class stored on their authenticated profile.
+    effective_class_level = class_level if is_admin else str(user.get("class_level") or "").strip()
+    if not is_admin and not effective_class_level:
+        raise HTTPException(status_code=403, detail="No class level is assigned to this account")
+
     if not is_admin and not user.get("subscription_active"):
         raise HTTPException(status_code=402, detail="Premium subscription required")
 
@@ -158,6 +164,18 @@ async def leaderboard(
                 )
 
     if test_id:
+        test = await db.tests.find_one({"_id": _safe_oid(test_id, "test ID")})
+        if not test:
+            raise HTTPException(status_code=404, detail="Test not found")
+
+        test_class_level = str(test.get("class_level") or "").strip()
+        if not is_admin and test_class_level != effective_class_level:
+            raise HTTPException(status_code=403, detail="Access denied to this class leaderboard")
+
+        # A test belongs to one class, so even admin requests must not mix
+        # attempts from users assigned to a different class.
+        effective_class_level = test_class_level
+
         # Fetch all submitted attempts for this test
         attempts_cursor = db.test_attempts.find(
             {"test_id": test_id, "submitted_at": {"$ne": None}}
@@ -173,8 +191,8 @@ async def leaderboard(
                 pass
 
         user_filter = {"_id": {"$in": uids}, "role": "student"}
-        if class_level:
-            user_filter["class_level"] = class_level
+        if effective_class_level:
+            user_filter["class_level"] = effective_class_level
 
         users = await db.users.find(user_filter).to_list(1000)
         user_map = {str(u["_id"]): u for u in users}
@@ -201,8 +219,8 @@ async def leaderboard(
     else:
         # Class rank based on test scores
         q: dict = {"role": "student"}
-        if class_level:
-            q["class_level"] = class_level
+        if effective_class_level:
+            q["class_level"] = effective_class_level
         users = await db.users.find(q).to_list(1000)
         user_map = {str(u["_id"]): u for u in users}
 

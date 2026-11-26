@@ -12,6 +12,7 @@ import '../../../core/models/test_model.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../common/widgets/app_logo.dart';
 import '../../common/widgets/shared_widgets.dart';
+import '../providers/test_provider.dart';
 
 String _fmtDuration(Duration d) {
   if (d.isNegative) d = Duration.zero;
@@ -122,6 +123,9 @@ class _LiveTestScreenState extends ConsumerState<LiveTestScreen> {
             ? 'Time up — submitted.'
             : 'Submitted. Score ${r.data['score']}/${r.data['total_marks']}',
       );
+      ref.read(completedTestIdsProvider.notifier).update(
+            (completed) => {...completed, widget.testId},
+          );
       context.go('/tests/${widget.testId}/result');
     } catch (e) {
       if (mounted) {

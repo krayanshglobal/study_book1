@@ -3,11 +3,13 @@
 /// Notifications are aggregated client-side from:
 /// - /api/announcements  (type: announcement)
 /// - /api/tests/upcoming (type: testReminder)
+/// - /api/questions?category=daily_24h (type: dailyPractice)
 library;
 
 enum NotifType {
   announcement,
   testReminder,
+  dailyPractice,
   newQuestions,
   offer,
   premiumActivated,
@@ -19,28 +21,48 @@ enum NotifType {
 extension NotifTypeX on NotifType {
   String get label {
     switch (this) {
-      case NotifType.announcement:     return 'Announcement';
-      case NotifType.testReminder:     return 'Test Reminder';
-      case NotifType.newQuestions:     return 'New Questions';
-      case NotifType.offer:            return 'Offer';
-      case NotifType.premiumActivated: return 'Premium Activated';
-      case NotifType.premiumExpired:   return 'Premium Expired';
-      case NotifType.referralReward:   return 'Referral Reward';
-      case NotifType.missedTest:       return 'Missed Test';
+      case NotifType.announcement:
+        return 'Announcement';
+      case NotifType.testReminder:
+        return 'Test Reminder';
+      case NotifType.dailyPractice:
+        return 'Daily Practice';
+      case NotifType.newQuestions:
+        return 'New Questions';
+      case NotifType.offer:
+        return 'Offer';
+      case NotifType.premiumActivated:
+        return 'Premium Activated';
+      case NotifType.premiumExpired:
+        return 'Premium Expired';
+      case NotifType.referralReward:
+        return 'Referral Reward';
+      case NotifType.missedTest:
+        return 'Missed Test';
     }
   }
 
   /// Route to navigate to when the notification is tapped (logged-in context).
   String get route {
     switch (this) {
-      case NotifType.announcement:     return '/dashboard';
-      case NotifType.testReminder:     return '/tests';
-      case NotifType.missedTest:       return '/tests';
-      case NotifType.newQuestions:     return '/questions';
-      case NotifType.offer:            return '/dashboard';
-      case NotifType.premiumActivated: return '/profile';
-      case NotifType.premiumExpired:   return '/pricing';
-      case NotifType.referralReward:   return '/referrals';
+      case NotifType.announcement:
+        return '/dashboard';
+      case NotifType.testReminder:
+        return '/tests';
+      case NotifType.dailyPractice:
+        return '/daily-practice';
+      case NotifType.missedTest:
+        return '/tests';
+      case NotifType.newQuestions:
+        return '/questions';
+      case NotifType.offer:
+        return '/dashboard';
+      case NotifType.premiumActivated:
+        return '/profile';
+      case NotifType.premiumExpired:
+        return '/pricing';
+      case NotifType.referralReward:
+        return '/referrals';
     }
   }
 

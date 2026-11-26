@@ -92,11 +92,9 @@ class NotificationsScreen extends ConsumerWidget {
     );
   }
 
-  void _navigate(
-      BuildContext context, AppNotification notif, bool isPremium) {
-    final route = notif.type.isPremium && !isPremium
-        ? '/pricing'
-        : notif.type.route;
+  void _navigate(BuildContext context, AppNotification notif, bool isPremium) {
+    final route =
+        notif.type.isPremium && !isPremium ? '/pricing' : notif.type.route;
     context.push(route);
   }
 }
@@ -138,7 +136,8 @@ class _NotificationCard extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         child: Container(
-          color: notif.isRead ? Colors.transparent : AppColors.blue.withAlpha(5),
+          color:
+              notif.isRead ? Colors.transparent : AppColors.blue.withAlpha(5),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -206,9 +205,8 @@ class _NotificationCard extends StatelessWidget {
                       notif.title,
                       style: GoogleFonts.inter(
                         fontSize: 14,
-                        fontWeight: notif.isRead
-                            ? FontWeight.w500
-                            : FontWeight.w700,
+                        fontWeight:
+                            notif.isRead ? FontWeight.w500 : FontWeight.w700,
                         color: AppColors.navy,
                       ),
                     ),
@@ -216,9 +214,7 @@ class _NotificationCard extends StatelessWidget {
                     Text(
                       notif.body,
                       style: GoogleFonts.inter(
-                          fontSize: 12,
-                          color: AppColors.slate500,
-                          height: 1.4),
+                          fontSize: 12, color: AppColors.slate500, height: 1.4),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -268,6 +264,8 @@ class _NotificationCard extends StatelessWidget {
         return _NotifMeta(Icons.campaign_rounded, AppColors.blue);
       case NotifType.testReminder:
         return _NotifMeta(Icons.access_time_rounded, AppColors.warning);
+      case NotifType.dailyPractice:
+        return _NotifMeta(Icons.today_rounded, AppColors.success);
       case NotifType.missedTest:
         return _NotifMeta(Icons.warning_rounded, AppColors.error);
       case NotifType.newQuestions:
@@ -314,22 +312,17 @@ class _ActionChip extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         decoration: BoxDecoration(
-          color: primary
-              ? AppColors.navy.withAlpha(10)
-              : AppColors.slate100,
+          color: primary ? AppColors.navy.withAlpha(10) : AppColors.slate100,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
-              color: primary
-                  ? AppColors.navy.withAlpha(20)
-                  : AppColors.slate200),
+              color:
+                  primary ? AppColors.navy.withAlpha(20) : AppColors.slate200),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(icon,
-                size: 12,
-                color:
-                    primary ? AppColors.navy : AppColors.slate500),
+                size: 12, color: primary ? AppColors.navy : AppColors.slate500),
             const SizedBox(width: 4),
             Text(
               label,
@@ -385,9 +378,7 @@ class _EmptyNotifications extends StatelessWidget {
                 'No notifications right now.\nPull down to refresh.',
                 textAlign: TextAlign.center,
                 style: GoogleFonts.inter(
-                    fontSize: 13,
-                    color: AppColors.slate500,
-                    height: 1.5),
+                    fontSize: 13, color: AppColors.slate500, height: 1.5),
               ),
             ],
           ),

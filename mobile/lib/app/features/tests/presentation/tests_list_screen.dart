@@ -10,6 +10,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../common/widgets/app_drawer.dart';
 import '../../common/widgets/shared_widgets.dart';
+import '../providers/test_provider.dart';
 
 bool _isLiveNow(TestModel t) {
   try {
@@ -80,6 +81,12 @@ class _TestsListScreenState extends ConsumerState<TestsListScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final completedTestIds = ref.watch(completedTestIdsProvider);
+    final visibleItems = _items
+        .where((test) =>
+            test.testType != 'mock' || !completedTestIds.contains(test.id))
+        .toList();
+
     return MainScaffold(
       title: 'Practice & Final Tests',
       body: _loading
@@ -111,13 +118,13 @@ class _TestsListScreenState extends ConsumerState<TestsListScreen> {
                           fontSize: 13, color: AppColors.slate500),
                     ),
                     const SizedBox(height: 20),
-                    if (_items.isEmpty)
+                    if (visibleItems.isEmpty)
                       const EmptyState(
                         message: 'No tests published yet. Check back soon!',
                         icon: Icons.assignment_outlined,
                       )
                     else
-                      ..._items.map((t) => _TestCard(test: t)),
+                      ...visibleItems.map((t) => _TestCard(test: t)),
                   ],
                 ),
               ),

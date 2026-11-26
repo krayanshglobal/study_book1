@@ -34,16 +34,23 @@ class TestListNotifier extends StateNotifier<TestListState> {
   }
 }
 
-final testListProvider = StateNotifierProvider<TestListNotifier, TestListState>((ref) {
+final testListProvider =
+    StateNotifierProvider<TestListNotifier, TestListState>((ref) {
   return TestListNotifier(ref);
 });
+
+/// Completed tests are recorded immediately after submission so a cached test
+/// list cannot offer the same practice test again while navigation settles.
+final completedTestIdsProvider =
+    StateProvider<Set<String>>((ref) => <String>{});
 
 // Live Test Attempt Controller
 class LiveTestState {
   final String? attemptId;
   final TestModel? test;
   final List<QuestionModel> questions;
-  final Map<String, dynamic> userAnswers; // questionId -> selectedIndex or typedAnswer
+  final Map<String, dynamic>
+      userAnswers; // questionId -> selectedIndex or typedAnswer
   final String? deadlineAt;
   final bool isLoading;
   final bool isSubmitting;
@@ -97,7 +104,7 @@ class LiveTestNotifier extends StateNotifier<LiveTestState> {
     try {
       final dio = ref.read(dioClientProvider);
       final res = await dio.post(ApiEndpoints.startTest(testId));
-      
+
       final testData = TestModel.fromJson(res.data['test']);
       final qList = (res.data['questions'] as List? ?? [])
           .map((e) => QuestionModel.fromJson(e))
@@ -127,7 +134,7 @@ class LiveTestNotifier extends StateNotifier<LiveTestState> {
     try {
       final dio = ref.read(dioClientProvider);
       final answersList = <Map<String, dynamic>>[];
-      
+
       for (final q in state.questions) {
         final val = state.userAnswers[q.id];
         if (q.qType == 'mcq') {
@@ -161,6 +168,7 @@ class LiveTestNotifier extends StateNotifier<LiveTestState> {
   }
 }
 
-final liveTestProvider = StateNotifierProvider<LiveTestNotifier, LiveTestState>((ref) {
+final liveTestProvider =
+    StateNotifierProvider<LiveTestNotifier, LiveTestState>((ref) {
   return LiveTestNotifier(ref);
 });

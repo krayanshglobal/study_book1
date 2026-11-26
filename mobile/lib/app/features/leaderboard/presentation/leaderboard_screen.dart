@@ -34,7 +34,8 @@ class LeaderboardScreen extends ConsumerStatefulWidget {
 }
 
 class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen> {
-  int _step = 1; // 1 = Select Class, 2 = Select Test, 3 = Leaderboard & Release Control
+  int _step =
+      1; // 1 = Select Class, 2 = Select Test, 3 = Leaderboard & Release Control
   String _classLevel = 'all';
   String _selectedTestId = 'total';
   Map? _selectedTest;
@@ -58,6 +59,7 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen> {
           final user = ref.read(authProvider).user;
           if (user != null && !user.isAdmin && user.classLevel != null) {
             _classLevel = user.classLevel!;
+            _step = 2;
           }
           _fetchTests();
         }
@@ -70,7 +72,8 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen> {
     try {
       final params = <String, dynamic>{};
       if (_classLevel != 'all') params['class_level'] = _classLevel;
-      final res = await dioClient.get(ApiEndpoints.tests, queryParameters: params);
+      final res =
+          await dioClient.get(ApiEndpoints.tests, queryParameters: params);
       final rawItems = (res.data['items'] as List?) ?? [];
       if (mounted) {
         setState(() {
@@ -92,11 +95,17 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen> {
 
     try {
       if (_selectedTestId == 'total') {
-        final res = await dioClient.get(ApiEndpoints.adminLeaderboardReleaseStatus);
-        if (mounted) setState(() => _releaseStatus = res.data['released'] == true);
+        final res =
+            await dioClient.get(ApiEndpoints.adminLeaderboardReleaseStatus);
+        if (mounted) {
+          setState(() => _releaseStatus = res.data['released'] == true);
+        }
       } else {
-        final res = await dioClient.get(ApiEndpoints.adminTestLeaderboardReleaseStatus(_selectedTestId));
-        if (mounted) setState(() => _releaseStatus = res.data['released'] == true);
+        final res = await dioClient.get(
+            ApiEndpoints.adminTestLeaderboardReleaseStatus(_selectedTestId));
+        if (mounted) {
+          setState(() => _releaseStatus = res.data['released'] == true);
+        }
       }
     } catch (e) {
       debugPrint('Error fetching release status: $e');
@@ -117,7 +126,11 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen> {
             _releaseStatus = newRel;
             _releaseLoading = false;
           });
-          showToast(context, newRel ? 'Overall leaderboard released to students!' : 'Overall leaderboard hidden from students.');
+          showToast(
+              context,
+              newRel
+                  ? 'Overall leaderboard released to students!'
+                  : 'Overall leaderboard hidden from students.');
         }
       } else {
         final res = await dioClient.post(
@@ -130,7 +143,11 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen> {
             _releaseStatus = newRel;
             _releaseLoading = false;
           });
-          showToast(context, newRel ? 'Test leaderboard released to students!' : 'Test leaderboard hidden from students.');
+          showToast(
+              context,
+              newRel
+                  ? 'Test leaderboard released to students!'
+                  : 'Test leaderboard hidden from students.');
         }
       }
     } catch (e) {
@@ -153,7 +170,8 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen> {
       if (_classLevel != 'all') params['class_level'] = _classLevel;
       if (_selectedTestId != 'total') params['test_id'] = _selectedTestId;
 
-      final res = await dioClient.get(ApiEndpoints.leaderboard, queryParameters: params);
+      final res = await dioClient.get(ApiEndpoints.leaderboard,
+          queryParameters: params);
       if (mounted) {
         setState(() {
           _items = res.data['items'] ?? [];
@@ -165,8 +183,10 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen> {
         final String errStr = formatApiError(e);
         setState(() {
           _loadingRankings = false;
-          if (errStr.contains('Leaderboard will be displayed shortly') || errStr.contains('403')) {
-            _blockedMsg = 'Leaderboard will be displayed shortly by the admin...';
+          if (errStr.contains('Leaderboard will be displayed shortly') ||
+              errStr.contains('403')) {
+            _blockedMsg =
+                'Leaderboard will be displayed shortly by the admin...';
             _items = [];
           } else {
             showToast(context, errStr, isError: true);
@@ -220,7 +240,8 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen> {
                     decoration: BoxDecoration(
                       color: const Color(0xFFFFFBEB),
                       borderRadius: BorderRadius.circular(24),
-                      border: Border.all(color: const Color(0xFFFDE68A), width: 1.5),
+                      border: Border.all(
+                          color: const Color(0xFFFDE68A), width: 1.5),
                     ),
                     child: const Center(
                       child: Icon(
@@ -233,7 +254,10 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen> {
                   const SizedBox(height: 24),
                   Text(
                     'Premium Feature',
-                    style: GoogleFonts.fraunces(fontSize: 26, fontWeight: FontWeight.bold, color: AppColors.navy),
+                    style: GoogleFonts.fraunces(
+                        fontSize: 26,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.navy),
                   ),
                   const SizedBox(height: 14),
                   ConstrainedBox(
@@ -241,7 +265,8 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen> {
                     child: Text(
                       'The leaderboard is exclusive to Premium users.\nUpgrade your subscription today to see where you rank!',
                       textAlign: TextAlign.center,
-                      style: GoogleFonts.inter(fontSize: 14, color: AppColors.slate600, height: 1.5),
+                      style: GoogleFonts.inter(
+                          fontSize: 14, color: AppColors.slate600, height: 1.5),
                     ),
                   ),
                   const SizedBox(height: 28),
@@ -249,10 +274,16 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen> {
                     onPressed: () => context.push('/pricing'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF7C3AED),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(99)),
-                      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(99)),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 32, vertical: 14),
                     ),
-                    child: Text('Upgrade to Premium', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white)),
+                    child: Text('Upgrade to Premium',
+                        style: GoogleFonts.inter(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white)),
                   ),
                 ],
               ),
@@ -283,11 +314,17 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen> {
                       context.pop();
                     } else {
                       final user = ref.read(authProvider).user;
-                      context.go(user?.isAdmin == true ? '/admin' : '/dashboard');
+                      context
+                          .go(user?.isAdmin == true ? '/admin' : '/dashboard');
                     }
                   },
-                  icon: const Icon(Icons.arrow_back_rounded, size: 16, color: AppColors.slate600),
-                  label: Text('Back', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.slate600)),
+                  icon: const Icon(Icons.arrow_back_rounded,
+                      size: 16, color: AppColors.slate600),
+                  label: Text('Back',
+                      style: GoogleFonts.inter(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.slate600)),
                 ),
               ),
 
@@ -299,7 +336,10 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen> {
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(color: AppColors.slate200),
                   boxShadow: [
-                    BoxShadow(color: AppColors.navy.withAlpha(6), blurRadius: 10, offset: const Offset(0, 2)),
+                    BoxShadow(
+                        color: AppColors.navy.withAlpha(6),
+                        blurRadius: 10,
+                        offset: const Offset(0, 2)),
                   ],
                 ),
                 child: Row(
@@ -312,7 +352,8 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen> {
                         onTap: () => setState(() => _step = 1),
                       ),
                     ),
-                    const Icon(Icons.chevron_right_rounded, size: 18, color: AppColors.slate300),
+                    const Icon(Icons.chevron_right_rounded,
+                        size: 18, color: AppColors.slate300),
                     Expanded(
                       child: _StepButton(
                         stepNumber: 2,
@@ -321,7 +362,8 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen> {
                         onTap: () => setState(() => _step = 2),
                       ),
                     ),
-                    const Icon(Icons.chevron_right_rounded, size: 18, color: AppColors.slate300),
+                    const Icon(Icons.chevron_right_rounded,
+                        size: 18, color: AppColors.slate300),
                     Expanded(
                       child: _StepButton(
                         stepNumber: 3,
@@ -355,7 +397,7 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen> {
 
   // STEP 1: SELECT CLASS LEVEL
   Widget _buildStep1ClassSelection(bool isStudent) {
-    final classesList = [
+    final allClasses = [
       if (!isStudent)
         {
           'id': 'all',
@@ -390,6 +432,10 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen> {
         'borderColor': const Color(0xFFFDE68A),
       },
     ];
+    final studentClass = ref.read(authProvider).user?.classLevel;
+    final classesList = isStudent
+        ? allClasses.where((item) => item['id'] == studentClass).toList()
+        : allClasses;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -414,11 +460,12 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen> {
         ),
         const SizedBox(height: 4),
         Text(
-          'Choose a class to view its tests and leaderboard rankings.',
+          isStudent
+              ? 'Your rankings include only students from Class $studentClass.'
+              : 'Choose a class to view its tests and leaderboard rankings.',
           style: GoogleFonts.inter(fontSize: 13, color: AppColors.slate500),
         ),
         const SizedBox(height: 20),
-
         LayoutBuilder(builder: (context, constraints) {
           final isWide = constraints.maxWidth > 550;
           final crossAxisCount = isWide ? 2 : 1;
@@ -473,7 +520,8 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen> {
                             decoration: BoxDecoration(
                               color: c['bgColor'] as Color,
                               borderRadius: BorderRadius.circular(16),
-                              border: Border.all(color: c['borderColor'] as Color),
+                              border:
+                                  Border.all(color: c['borderColor'] as Color),
                             ),
                             child: Center(
                               child: Icon(
@@ -502,7 +550,6 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen> {
                             ),
                         ],
                       ),
-
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -526,7 +573,6 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen> {
                           ),
                         ],
                       ),
-
                       Container(
                         padding: const EdgeInsets.only(top: 8),
                         decoration: const BoxDecoration(
@@ -613,7 +659,8 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen> {
               style: OutlinedButton.styleFrom(
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(99)),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               ),
             ),
           ],
@@ -1073,7 +1120,8 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen> {
                           : Colors.white,
                       elevation: _releaseStatus ? 0 : 2,
                       side: _releaseStatus
-                          ? const BorderSide(color: Color(0xFFFDE68A), width: 1.5)
+                          ? const BorderSide(
+                              color: Color(0xFFFDE68A), width: 1.5)
                           : BorderSide.none,
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(99)),
@@ -1169,8 +1217,10 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen> {
                       const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                   decoration: const BoxDecoration(
                     color: AppColors.slate50,
-                    borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-                    border: Border(bottom: BorderSide(color: AppColors.slate200)),
+                    borderRadius:
+                        BorderRadius.vertical(top: Radius.circular(24)),
+                    border:
+                        Border(bottom: BorderSide(color: AppColors.slate200)),
                   ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1313,14 +1363,16 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen> {
                                       ),
                                     ),
                                     if (r['student_id'] != null &&
-                                        (r['student_id'] as String).isNotEmpty) ...[
+                                        (r['student_id'] as String)
+                                            .isNotEmpty) ...[
                                       const SizedBox(width: 6),
                                       Container(
                                         padding: const EdgeInsets.symmetric(
                                             horizontal: 6, vertical: 2),
                                         decoration: BoxDecoration(
                                           color: const Color(0xFFEFF6FF),
-                                          borderRadius: BorderRadius.circular(4),
+                                          borderRadius:
+                                              BorderRadius.circular(4),
                                           border: Border.all(
                                               color: const Color(0xFFBFDBFE)),
                                         ),
@@ -1341,7 +1393,8 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen> {
                                             horizontal: 6, vertical: 2),
                                         decoration: BoxDecoration(
                                           color: const Color(0xFF7C3AED),
-                                          borderRadius: BorderRadius.circular(4),
+                                          borderRadius:
+                                              BorderRadius.circular(4),
                                         ),
                                         child: Text(
                                           'YOU',

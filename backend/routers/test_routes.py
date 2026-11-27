@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, Depends, Query
 from bson import ObjectId
 from typing import Optional
 from models import TestCreate, TestUpdate, SubmitTestInput, now_iso
-from auth import require_premium, require_role
+from auth import get_current_user, require_premium, require_role
 import logging
 
 logger = logging.getLogger(__name__)
@@ -161,7 +161,7 @@ async def list_tests(
 
 
 @router.get("/upcoming")
-async def upcoming(user=Depends(require_premium)):
+async def upcoming(user=Depends(get_current_user)):
     from server import db
     today = datetime.now(timezone.utc).date().isoformat()
     q: dict = {"is_published": True, "scheduled_date": {"$gte": today}}
@@ -188,6 +188,55 @@ async def upcoming(user=Depends(require_premium)):
     # Include every relevant newly published test in the notification feed.
     cursor = db.tests.find(q).sort("scheduled_date", 1).limit(100)
     return {"items": [_ser(t) async for t in cursor]}
+
+
+@router.get("/notifications")
+async def test_notifications(
+    limit: int = Query(100, ge=1, le=200),
+    skip: int = Query(0, ge=0),
+    user=Depends(get_current_user),
+):
+    """Published-test notifications for every registered student in the test class.
+
+    This feed is deliberately independent of premium access and the scheduled
+    date so a publication remains a stable notification rather than disappearing
+    as soon as the test window passes.
+    """
+    from server import db
+
+    if user.get("role") != "student" or not user.get("class_level"):
+        return {"items": [], "total": 0}
+
+    query = {
+        "is_published": True,
+        "class_level": user["class_level"],
+    }
+    projection = {
+        "title": 1,
+        "class_level": 1,
+        "scheduled_date": 1,
+        "start_date": 1,
+        "start_time": 1,
+        "test_type": 1,
+        "premium_only": 1,
+        "published_at": 1,
+        "created_at": 1,
+    }
+    cursor = (
+        db.tests.find(query, projection)
+        .sort([("published_at", -1), ("created_at", -1)])
+        .skip(skip)
+        .limit(limit)
+    )
+    items = []
+    async for test in cursor:
+        item = _ser(test)
+        item["notification_id"] = f"test_{item['_id']}"
+        item["notification_type"] = "testReminder"
+        item["notification_at"] = item.get("published_at") or item.get("created_at")
+        items.append(item)
+    total = await db.tests.count_documents(query)
+    return {"items": items, "total": total}
 
 
 @router.get("/my-results")
@@ -438,6 +487,8 @@ async def create_test(body: TestCreate, admin=Depends(require_role("admin", "sup
         raise HTTPException(status_code=422, detail="Selected questions must exist and belong to the test class")
     doc["created_by"] = admin["_id"]
     doc["created_at"] = now_iso()
+    if doc.get("is_published"):
+        doc["published_at"] = doc["created_at"]
     result = await db.tests.insert_one(doc)
     doc["_id"] = str(result.inserted_id)
 
@@ -469,11 +520,20 @@ async def update_test(tid: str, body: TestUpdate, admin=Depends(require_role("ad
             raise HTTPException(status_code=422, detail="Selected questions must exist and belong to the test class")
     merged = {**existing, **upd}
     merged = _normalise_and_validate_schedule(merged, allow_past=True)
+    first_published_at = None
+    if (
+        merged.get("is_published")
+        and not existing.get("is_published")
+        and not existing.get("published_at")
+    ):
+        first_published_at = now_iso()
     schedule_fields = {k: merged.get(k) for k in (
         "scheduled_date", "start_date", "start_time", "end_date", "end_time",
         "duration_minutes", "test_type"
     )}
     upd.update(schedule_fields)
+    if first_published_at:
+        upd["published_at"] = first_published_at
     upd["updated_at"] = now_iso()
     await db.tests.update_one({"_id": oid}, {"$set": upd})
     t = await db.tests.find_one({"_id": oid})

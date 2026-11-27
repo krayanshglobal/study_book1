@@ -2,7 +2,7 @@
 ///
 /// Notifications are aggregated client-side from:
 /// - /api/announcements  (type: announcement)
-/// - /api/tests/upcoming (type: testReminder)
+/// - /api/tests/notifications (type: testReminder)
 /// - /api/questions?category=daily_24h (type: dailyPractice)
 library;
 

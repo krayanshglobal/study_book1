@@ -121,11 +121,6 @@ class AppDrawer extends ConsumerWidget {
                       route: '/explorer',
                       locked: user?.subscriptionActive != true),
                   _NavItem(
-                      icon: Icons.quiz_rounded,
-                      label: 'Question Bank',
-                      route: '/questions',
-                      locked: user?.subscriptionActive != true),
-                  _NavItem(
                       icon: Icons.assignment_rounded,
                       label: 'Tests',
                       route: '/tests',

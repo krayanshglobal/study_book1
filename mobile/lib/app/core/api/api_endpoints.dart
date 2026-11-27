@@ -25,6 +25,7 @@ class ApiEndpoints {
   // Tests
   static const String tests = '/api/tests';
   static const String upcomingTests = '/api/tests/upcoming';
+  static const String testNotifications = '/api/tests/notifications';
   static String testDetail(String id) => '/api/tests/$id';
   static String startTest(String id) => '/api/tests/$id/start';
   static String submitTest(String id) => '/api/tests/$id/submit';

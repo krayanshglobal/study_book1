@@ -398,6 +398,7 @@ async def _startup():
         await db.questions.create_index([("question_text", "text")])   # text search index
         await db.tests.create_index([("scheduled_date", 1)])
         await db.tests.create_index([("start_date", 1), ("end_date", 1)])
+        await db.tests.create_index([("is_published", 1), ("class_level", 1), ("published_at", -1)])
         await db.test_attempts.create_index([("user_id", 1), ("test_id", 1)], unique=True)
         await db.test_attempts.create_index([("test_id", 1), ("score", -1)])
         await db.login_attempts.create_index("identifier")

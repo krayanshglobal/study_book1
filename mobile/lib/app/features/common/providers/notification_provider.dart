@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -10,7 +12,7 @@ import '../../../core/models/notification_model.dart';
 //
 // Aggregates notifications from existing APIs:
 //   /api/announcements     → NotifType.announcement
-//   /api/tests/upcoming    → NotifType.testReminder
+//   /api/tests/notifications → NotifType.testReminder
 //   /api/questions (daily) → NotifType.dailyPractice
 //
 // Read state is persisted locally via shared_preferences so the badge count
@@ -44,9 +46,15 @@ class NotificationState {
 
 class NotificationNotifier extends StateNotifier<NotificationState> {
   static const _prefKey = 'sb_read_notification_ids';
+  Timer? _refreshTimer;
+  bool _refreshInProgress = false;
 
   NotificationNotifier() : super(const NotificationState()) {
     refresh();
+    _refreshTimer = Timer.periodic(
+      const Duration(minutes: 1),
+      (_) => refresh(),
+    );
   }
 
   /// Reads locally-persisted read IDs from shared_preferences.
@@ -63,6 +71,8 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
 
   /// Fetches all notifications from backend APIs and merges with local read state.
   Future<void> refresh() async {
+    if (_refreshInProgress) return;
+    _refreshInProgress = true;
     state = state.copyWith(loading: true, error: null);
 
     final readIds = await _loadReadIds();
@@ -87,15 +97,17 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
         }
       } catch (_) {}
 
-      // ── Upcoming Tests → Reminders ────────────────────────────────────────
+      // ── Published Tests → Notifications ──────────────────────────────────
       try {
-        final resp = await dioClient.get(ApiEndpoints.upcomingTests);
+        final resp = await dioClient.get(ApiEndpoints.testNotifications);
         final responseData = resp.data;
         final items = responseData is Map
             ? (responseData['items'] as List? ?? const [])
             : (responseData as List? ?? const []);
         for (final item in items) {
-          final id = 'test_${item['_id'] ?? item['id']}';
+          final rawId =
+              (item['notification_id'] ?? item['_id'] ?? item['id']).toString();
+          final id = rawId.startsWith('test_') ? rawId : 'test_$rawId';
           final title = item['title'] as String? ?? 'Upcoming Test';
           final date = item['scheduled_date'] as String? ?? '';
           final time = item['start_time'] as String? ?? '';
@@ -105,8 +117,12 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
             title: 'New Test: $title',
             body:
                 'Scheduled on $date${time.isNotEmpty ? ' at $time' : ''}. Tap to view.',
-            timestamp: _parseDate(item['created_at'] as String? ??
-                DateTime.now().toIso8601String()),
+            timestamp: _parseDate(
+              item['notification_at'] as String? ??
+                  item['published_at'] as String? ??
+                  item['created_at'] as String? ??
+                  DateTime.now().toIso8601String(),
+            ),
             isRead: readIds.contains(id),
           ));
         }
@@ -160,7 +176,15 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
         error: 'Failed to load notifications',
         notifications: notifs,
       );
+    } finally {
+      _refreshInProgress = false;
     }
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
   }
 
   /// Marks a single notification as read and persists the change.

@@ -42,6 +42,7 @@ class _LiveTestScreenState extends ConsumerState<LiveTestScreen> {
   List<QuestionModel> _questions = [];
   final Map<String, Map<String, dynamic>> _answers =
       {}; // qid -> {selected_index, typed_answer}
+  final ScrollController _scrollController = ScrollController();
   int _idx = 0;
   DateTime? _deadline;
   Timer? _timer;
@@ -58,6 +59,7 @@ class _LiveTestScreenState extends ConsumerState<LiveTestScreen> {
   @override
   void dispose() {
     _timer?.cancel();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -135,14 +137,32 @@ class _LiveTestScreenState extends ConsumerState<LiveTestScreen> {
     }
   }
 
-  int get _answeredCount {
-    return _questions.where((q) {
-      final a = _answers[q.id];
-      if (a == null) return false;
-      return a['selected_index'] != null ||
-          (a['typed_answer'] != null &&
-              (a['typed_answer'] as String).trim().isNotEmpty);
-    }).length;
+  bool _isAnswered(QuestionModel question) {
+    final answer = _answers[question.id];
+    if (answer == null) return false;
+
+    final typedAnswer = answer['typed_answer'];
+    return answer['selected_index'] != null ||
+        (typedAnswer is String && typedAnswer.trim().isNotEmpty);
+  }
+
+  int get _answeredCount => _questions.where(_isAnswered).length;
+
+  void _goToNextQuestion() {
+    if (_idx >= _questions.length - 1 || !_isAnswered(_questions[_idx])) {
+      return;
+    }
+
+    setState(() => _idx++);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          0,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+        );
+      }
+    });
   }
 
   @override
@@ -156,6 +176,7 @@ class _LiveTestScreenState extends ConsumerState<LiveTestScreen> {
 
     final q = _questions[_idx];
     final currentAnswer = _answers[q.id];
+    final hasCurrentAnswer = _isAnswered(q);
 
     return PopScope(
       canPop: false,
@@ -258,6 +279,7 @@ class _LiveTestScreenState extends ConsumerState<LiveTestScreen> {
               child: Divider(height: 1, color: AppColors.slate200)),
         ),
         body: SingleChildScrollView(
+          controller: _scrollController,
           padding: const EdgeInsets.all(20),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -382,10 +404,12 @@ class _LiveTestScreenState extends ConsumerState<LiveTestScreen> {
                                           '')
                                       .length),
                         onChanged: (val) {
-                          _answers[q.id] = {
-                            ...?_answers[q.id],
-                            'typed_answer': val,
-                          };
+                          setState(() {
+                            _answers[q.id] = {
+                              ...?_answers[q.id],
+                              'typed_answer': val,
+                            };
+                          });
                         },
                         style: GoogleFonts.jetBrainsMono(fontSize: 14),
                         decoration: InputDecoration(
@@ -397,108 +421,32 @@ class _LiveTestScreenState extends ConsumerState<LiveTestScreen> {
                     ],
 
                     const SizedBox(height: 24),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        OutlinedButton(
-                          onPressed:
-                              _idx == 0 ? null : () => setState(() => _idx--),
-                          style: OutlinedButton.styleFrom(
+                    if (hasCurrentAnswer)
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: ElevatedButton(
+                          onPressed: _idx < _questions.length - 1
+                              ? _goToNextQuestion
+                              : (_submitting
+                                  ? null
+                                  : () => _submit(auto: false)),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _idx < _questions.length - 1
+                                ? AppColors.navy
+                                : AppColors.violet,
                             shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(99)),
                           ),
-                          child: const Text('Previous'),
+                          child: Text(_idx < _questions.length - 1
+                              ? 'Next Question'
+                              : 'Submit Test'),
                         ),
-                        if (_idx < _questions.length - 1)
-                          ElevatedButton(
-                            onPressed: () => setState(() => _idx++),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.navy,
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(99)),
-                            ),
-                            child: const Text('Next'),
-                          )
-                        else
-                          ElevatedButton(
-                            onPressed:
-                                _submitting ? null : () => _submit(auto: false),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.violet,
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(99)),
-                            ),
-                            child: const Text('Submit test'),
-                          ),
-                      ],
-                    ),
+                      ),
                   ],
                 ),
               ),
 
               const SizedBox(height: 24),
-              // Navigator grid
-              Text('NAVIGATOR',
-                  style: GoogleFonts.inter(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1.5,
-                      color: AppColors.slate500)),
-              const SizedBox(height: 10),
-              GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 6,
-                  crossAxisSpacing: 8,
-                  mainAxisSpacing: 8,
-                ),
-                itemCount: _questions.length,
-                itemBuilder: (ctx, i) {
-                  final qId = _questions[i].id;
-                  final a = _answers[qId];
-                  final isAnswered = a != null &&
-                      (a['selected_index'] != null ||
-                          (a['typed_answer'] != null &&
-                              (a['typed_answer'] as String).trim().isNotEmpty));
-                  final isCurrent = i == _idx;
-
-                  Color bg = AppColors.white;
-                  Color textColor = AppColors.slate600;
-                  Color borderColor = AppColors.slate200;
-
-                  if (isCurrent) {
-                    bg = AppColors.navy;
-                    textColor = Colors.white;
-                    borderColor = AppColors.navy;
-                  } else if (isAnswered) {
-                    bg = AppColors.blue.withAlpha(20);
-                    textColor = AppColors.blue;
-                    borderColor = AppColors.blue.withAlpha(80);
-                  }
-
-                  return GestureDetector(
-                    onTap: () => setState(() => _idx = i),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: bg,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: borderColor),
-                      ),
-                      child: Center(
-                        child: Text(
-                          '${i + 1}',
-                          style: GoogleFonts.jetBrainsMono(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: textColor,
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
             ],
           ),
         ),

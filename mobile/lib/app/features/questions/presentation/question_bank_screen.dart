@@ -53,6 +53,42 @@ String _plainTextFromHtml(Object? value) {
       .trim();
 }
 
+enum _QuestionListFilter { total, answered, left }
+
+class _QuestionAnswerState {
+  int? selectedIndex;
+  String typedAnswer;
+  Map<String, dynamic>? result;
+  bool submitting = false;
+
+  _QuestionAnswerState({
+    this.selectedIndex,
+    this.typedAnswer = '',
+    this.result,
+  });
+
+  factory _QuestionAnswerState.fromQuestion(QuestionModel question) {
+    final attempt = question.attempt;
+    final rawSelectedIndex = attempt?['selected_index'];
+    return _QuestionAnswerState(
+      selectedIndex: rawSelectedIndex is num
+          ? rawSelectedIndex.toInt()
+          : int.tryParse(rawSelectedIndex?.toString() ?? ''),
+      typedAnswer: attempt?['typed_answer']?.toString() ?? '',
+      result: attempt == null ? null : Map<String, dynamic>.from(attempt),
+    );
+  }
+
+  void restoreAttempt(Map<String, dynamic> attempt) {
+    final rawSelectedIndex = attempt['selected_index'];
+    selectedIndex = rawSelectedIndex is num
+        ? rawSelectedIndex.toInt()
+        : int.tryParse(rawSelectedIndex?.toString() ?? '');
+    typedAnswer = attempt['typed_answer']?.toString() ?? '';
+    result = Map<String, dynamic>.from(attempt);
+  }
+}
+
 class QuestionBankScreen extends ConsumerStatefulWidget {
   final bool dailyOnly;
 
@@ -73,6 +109,8 @@ class _QuestionBankState extends ConsumerState<QuestionBankScreen> {
   int _total = 0;
   final _classes = ['8', '9', '10'];
   bool _isStudent = false; // set in initState from auth state
+  final Map<String, _QuestionAnswerState> _answerStates = {};
+  _QuestionListFilter _questionListFilter = _QuestionListFilter.total;
 
   // ── Statistics tracking ────────────────────────────────────────────────────
   // Tracks which question IDs the student has answered in this session.
@@ -80,10 +118,26 @@ class _QuestionBankState extends ConsumerState<QuestionBankScreen> {
   final Set<String> _answeredIds = {};
 
   void _markAnswered(String id) {
-    if (!_answeredIds.contains(id)) {
-      setState(() => _answeredIds.add(id));
-    }
+    if (!mounted) return;
+    setState(() => _answeredIds.add(id));
     if (widget.dailyOnly) _refreshDailyStatus();
+  }
+
+  _QuestionAnswerState _answerStateFor(QuestionModel question) {
+    return _answerStates.putIfAbsent(
+      question.id,
+      () => _QuestionAnswerState.fromQuestion(question),
+    );
+  }
+
+  void _hydrateAnswerState(QuestionModel question) {
+    final state = _answerStates[question.id];
+    final attempt = question.attempt;
+    if (state == null) {
+      _answerStates[question.id] = _QuestionAnswerState.fromQuestion(question);
+    } else if (attempt != null && state.result == null) {
+      state.restoreAttempt(attempt);
+    }
   }
 
   Future<void> _refreshDailyStatus() async {
@@ -107,7 +161,7 @@ class _QuestionBankState extends ConsumerState<QuestionBankScreen> {
       _isStudent = true;
       _filterClass = user.classLevel;
     }
-    _loadTopics();
+    if (!widget.dailyOnly) _loadTopics();
     _load();
   }
 
@@ -149,13 +203,16 @@ class _QuestionBankState extends ConsumerState<QuestionBankScreen> {
           .toList();
       if (!mounted) return;
       setState(() {
+        for (final question in items) {
+          _hydrateAnswerState(question);
+        }
         if (reset) {
           _questions = items;
         } else {
           _questions.addAll(items);
         }
         _answeredIds.addAll(items
-            .where((question) => question.attempt != null)
+            .where((question) => _answerStates[question.id]?.result != null)
             .map((question) => question.id));
         _total = r.data['total'] ?? 0;
         _loading = false;
@@ -186,6 +243,7 @@ class _QuestionBankState extends ConsumerState<QuestionBankScreen> {
       _filterTopic = null;
       _filterDate = null;
       _answeredIds.clear();
+      _questionListFilter = _QuestionListFilter.total;
     });
     _loadTopics();
     _load(reset: true);
@@ -193,14 +251,26 @@ class _QuestionBankState extends ConsumerState<QuestionBankScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final hasActiveFilters =
-        _filterClass != null || _filterTopic != null || _filterDate != null;
+    final hasActiveFilters = !widget.dailyOnly &&
+        (_filterClass != null || _filterTopic != null || _filterDate != null);
 
     // Compute stats from currently loaded questions
     final totalLoaded = _questions.length;
     final answered =
         _questions.where((q) => _answeredIds.contains(q.id)).length;
     final unanswered = totalLoaded - answered;
+    final visibleQuestions = !widget.dailyOnly
+        ? _questions
+        : _questions.where((question) {
+            switch (_questionListFilter) {
+              case _QuestionListFilter.total:
+                return true;
+              case _QuestionListFilter.answered:
+                return _answeredIds.contains(question.id);
+              case _QuestionListFilter.left:
+                return !_answeredIds.contains(question.id);
+            }
+          }).toList();
 
     return MainScaffold(
       title: widget.dailyOnly ? 'Daily Practice' : 'Question Bank',
@@ -281,115 +351,117 @@ class _QuestionBankState extends ConsumerState<QuestionBankScreen> {
                           },
                         ),
                       ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: DropdownButtonFormField<String>(
-                        value: _filterTopic,
-                        isExpanded: true,
-                        decoration: InputDecoration(
-                          contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 8),
-                          border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10),
-                              borderSide:
-                                  const BorderSide(color: AppColors.slate200)),
-                          enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10),
-                              borderSide:
-                                  const BorderSide(color: AppColors.slate200)),
-                          isDense: true,
+                    if (!widget.dailyOnly) const SizedBox(width: 10),
+                    if (!widget.dailyOnly)
+                      Expanded(
+                        child: DropdownButtonFormField<String>(
+                          value: _filterTopic,
+                          isExpanded: true,
+                          decoration: InputDecoration(
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 8),
+                            border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                                borderSide: const BorderSide(
+                                    color: AppColors.slate200)),
+                            enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                                borderSide: const BorderSide(
+                                    color: AppColors.slate200)),
+                            isDense: true,
+                          ),
+                          hint: Text('Chapter',
+                              style: GoogleFonts.inter(
+                                  fontSize: 13, color: AppColors.slate400)),
+                          items: [
+                            const DropdownMenuItem(
+                                value: null, child: Text('All chapters')),
+                            ..._topics.map((t) => DropdownMenuItem(
+                                value: t['topic'] as String,
+                                child: Text(t['topic'] as String))),
+                          ],
+                          onChanged: (v) {
+                            setState(() => _filterTopic = v);
+                            _load(reset: true);
+                          },
                         ),
-                        hint: Text('Chapter',
-                            style: GoogleFonts.inter(
-                                fontSize: 13, color: AppColors.slate400)),
-                        items: [
-                          const DropdownMenuItem(
-                              value: null, child: Text('All chapters')),
-                          ..._topics.map((t) => DropdownMenuItem(
-                              value: t['topic'] as String,
-                              child: Text(t['topic'] as String))),
-                        ],
-                        onChanged: (v) {
-                          setState(() => _filterTopic = v);
-                          _load(reset: true);
-                        },
                       ),
-                    ),
                   ],
                 ),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Expanded(
-                      child: InkWell(
-                        onTap: _pickDate,
-                        borderRadius: BorderRadius.circular(10),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 10),
-                          decoration: BoxDecoration(
-                            color: AppColors.white,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                              color: _filterDate != null
-                                  ? AppColors.blue
-                                  : AppColors.slate200,
-                              width: _filterDate != null ? 1.5 : 1.0,
+                if (!widget.dailyOnly) const SizedBox(height: 10),
+                if (!widget.dailyOnly)
+                  Row(
+                    children: [
+                      Expanded(
+                        child: InkWell(
+                          onTap: _pickDate,
+                          borderRadius: BorderRadius.circular(10),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: AppColors.white,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: _filterDate != null
+                                    ? AppColors.blue
+                                    : AppColors.slate200,
+                                width: _filterDate != null ? 1.5 : 1.0,
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(Icons.calendar_today,
+                                    size: 16,
+                                    color: _filterDate != null
+                                        ? AppColors.blue
+                                        : AppColors.slate400),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    _filterDate != null
+                                        ? DateFormat('dd MMM yyyy')
+                                            .format(_filterDate!)
+                                        : 'Date 📅',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 13,
+                                      color: _filterDate != null
+                                          ? AppColors.navy
+                                          : AppColors.slate400,
+                                      fontWeight: _filterDate != null
+                                          ? FontWeight.w600
+                                          : FontWeight.normal,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                if (_filterDate != null)
+                                  GestureDetector(
+                                    onTap: () {
+                                      setState(() => _filterDate = null);
+                                      _load(reset: true);
+                                    },
+                                    child: const Icon(Icons.close,
+                                        size: 16, color: AppColors.slate500),
+                                  ),
+                              ],
                             ),
                           ),
-                          child: Row(
-                            children: [
-                              Icon(Icons.calendar_today,
-                                  size: 16,
-                                  color: _filterDate != null
-                                      ? AppColors.blue
-                                      : AppColors.slate400),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  _filterDate != null
-                                      ? DateFormat('dd MMM yyyy')
-                                          .format(_filterDate!)
-                                      : 'Date 📅',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 13,
-                                    color: _filterDate != null
-                                        ? AppColors.navy
-                                        : AppColors.slate400,
-                                    fontWeight: _filterDate != null
-                                        ? FontWeight.w600
-                                        : FontWeight.normal,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              if (_filterDate != null)
-                                GestureDetector(
-                                  onTap: () {
-                                    setState(() => _filterDate = null);
-                                    _load(reset: true);
-                                  },
-                                  child: const Icon(Icons.close,
-                                      size: 16, color: AppColors.slate500),
-                                ),
-                            ],
-                          ),
                         ),
                       ),
-                    ),
-                    if (hasActiveFilters) ...[
-                      const SizedBox(width: 10),
-                      TextButton.icon(
-                        onPressed: _resetFilters,
-                        icon: const Icon(Icons.restart_alt,
-                            size: 16, color: AppColors.slate600),
-                        label: Text('Clear',
-                            style: GoogleFonts.inter(
-                                fontSize: 13, color: AppColors.slate600)),
-                      ),
+                      if (hasActiveFilters) ...[
+                        const SizedBox(width: 10),
+                        TextButton.icon(
+                          onPressed: _resetFilters,
+                          icon: const Icon(Icons.restart_alt,
+                              size: 16, color: AppColors.slate600),
+                          label: Text('Clear',
+                              style: GoogleFonts.inter(
+                                  fontSize: 13, color: AppColors.slate600)),
+                        ),
+                      ],
                     ],
-                  ],
-                ),
+                  ),
               ],
             ),
           ),
@@ -407,6 +479,12 @@ class _QuestionBankState extends ConsumerState<QuestionBankScreen> {
                       count: totalLoaded,
                       color: AppColors.blue,
                       bgColor: AppColors.blue.withAlpha(14),
+                      selected: widget.dailyOnly &&
+                          _questionListFilter == _QuestionListFilter.total,
+                      onTap: widget.dailyOnly
+                          ? () => setState(() =>
+                              _questionListFilter = _QuestionListFilter.total)
+                          : null,
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -417,6 +495,12 @@ class _QuestionBankState extends ConsumerState<QuestionBankScreen> {
                       count: answered,
                       color: AppColors.success,
                       bgColor: AppColors.success.withAlpha(14),
+                      selected: widget.dailyOnly &&
+                          _questionListFilter == _QuestionListFilter.answered,
+                      onTap: widget.dailyOnly
+                          ? () => setState(() => _questionListFilter =
+                              _QuestionListFilter.answered)
+                          : null,
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -427,6 +511,12 @@ class _QuestionBankState extends ConsumerState<QuestionBankScreen> {
                       count: unanswered,
                       color: AppColors.warning,
                       bgColor: AppColors.warning.withAlpha(14),
+                      selected: widget.dailyOnly &&
+                          _questionListFilter == _QuestionListFilter.left,
+                      onTap: widget.dailyOnly
+                          ? () => setState(() =>
+                              _questionListFilter = _QuestionListFilter.left)
+                          : null,
                     ),
                   ),
                 ],
@@ -444,34 +534,45 @@ class _QuestionBankState extends ConsumerState<QuestionBankScreen> {
                             : 'No questions found.',
                         icon: Icons.quiz_outlined,
                       )
-                    : ListView.builder(
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                        itemCount: _questions.length + 1,
-                        itemBuilder: (_, i) {
-                          if (i == _questions.length) {
-                            return _questions.length < _total
-                                ? Center(
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(16),
-                                      child: TextButton(
-                                        onPressed: () {
-                                          setState(() => _skip += 20);
-                                          _load();
-                                        },
-                                        child: Text('Load more',
-                                            style: GoogleFonts.inter(
-                                                color: AppColors.blue)),
-                                      ),
-                                    ),
-                                  )
-                                : const SizedBox.shrink();
-                          }
-                          return _QuestionCard(
-                            question: _questions[i],
-                            onAnswered: () => _markAnswered(_questions[i].id),
-                          );
-                        },
-                      ),
+                    : visibleQuestions.isEmpty
+                        ? EmptyState(
+                            message: _questionListFilter ==
+                                    _QuestionListFilter.answered
+                                ? 'No answered questions yet.'
+                                : 'No questions left to answer.',
+                            icon: Icons.filter_list_off,
+                          )
+                        : ListView.builder(
+                            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                            itemCount: visibleQuestions.length + 1,
+                            itemBuilder: (_, i) {
+                              if (i == visibleQuestions.length) {
+                                return _questions.length < _total
+                                    ? Center(
+                                        child: Padding(
+                                          padding: const EdgeInsets.all(16),
+                                          child: TextButton(
+                                            onPressed: () {
+                                              setState(() => _skip += 20);
+                                              _load();
+                                            },
+                                            child: Text('Load more',
+                                                style: GoogleFonts.inter(
+                                                    color: AppColors.blue)),
+                                          ),
+                                        ),
+                                      )
+                                    : const SizedBox.shrink();
+                              }
+                              final question = visibleQuestions[i];
+                              return _QuestionCard(
+                                key: ValueKey(question.id),
+                                question: question,
+                                answerState: _answerStateFor(question),
+                                onAnswered: () => _markAnswered(question.id),
+                              );
+                            },
+                          ),
           ),
         ],
       ),
@@ -528,6 +629,8 @@ class _StatPill extends StatelessWidget {
   final int count;
   final Color color;
   final Color bgColor;
+  final bool selected;
+  final VoidCallback? onTap;
 
   const _StatPill({
     required this.emoji,
@@ -535,49 +638,64 @@ class _StatPill extends StatelessWidget {
     required this.count,
     required this.color,
     required this.bgColor,
+    this.selected = false,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-      decoration: BoxDecoration(
-        color: bgColor,
+    return Semantics(
+      button: onTap != null,
+      selected: selected,
+      label: onTap == null ? '$label: $count' : 'Show $label questions: $count',
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withAlpha(40)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(emoji, style: const TextStyle(fontSize: 14)),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  label,
-                  style: GoogleFonts.inter(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
-                    color: color,
-                    letterSpacing: 0.3,
-                  ),
-                ),
-                Text(
-                  '$count',
-                  style: GoogleFonts.inter(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    color: color,
-                    height: 1.1,
-                  ),
-                ),
-              ],
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+          decoration: BoxDecoration(
+            color: selected ? color.withAlpha(24) : bgColor,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: selected ? color : color.withAlpha(40),
+              width: selected ? 1.5 : 1,
             ),
           ),
-        ],
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(emoji, style: const TextStyle(fontSize: 14)),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      label,
+                      style: GoogleFonts.inter(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: color,
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+                    Text(
+                      '$count',
+                      style: GoogleFonts.inter(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: color,
+                        height: 1.1,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -585,48 +703,40 @@ class _StatPill extends StatelessWidget {
 
 class _QuestionCard extends StatefulWidget {
   final QuestionModel question;
+  final _QuestionAnswerState answerState;
   final VoidCallback onAnswered;
-  const _QuestionCard({required this.question, required this.onAnswered});
+  const _QuestionCard({
+    super.key,
+    required this.question,
+    required this.answerState,
+    required this.onAnswered,
+  });
 
   @override
   State<_QuestionCard> createState() => _QuestionCardState();
 }
 
 class _QuestionCardState extends State<_QuestionCard> {
-  int? _selectedIndex;
-  String _typedAnswer = '';
-  Map? _result;
-  bool _submitting = false;
-
-  @override
-  void initState() {
-    super.initState();
-    final attempt = widget.question.attempt;
-    if (attempt != null) {
-      _selectedIndex = (attempt['selected_index'] as num?)?.toInt();
-      _typedAnswer = attempt['typed_answer']?.toString() ?? '';
-      _result = Map<String, dynamic>.from(attempt);
-    }
-  }
-
   Future<void> _check() async {
-    setState(() => _submitting = true);
+    final answerState = widget.answerState;
+    final question = widget.question;
+    final onAnswered = widget.onAnswered;
+    setState(() => answerState.submitting = true);
     try {
-      final body = widget.question.qType == 'mcq'
-          ? {'selected_index': _selectedIndex}
-          : {'typed_answer': _typedAnswer};
-      final r = await dioClient
-          .post(ApiEndpoints.checkQuestion(widget.question.id), data: body);
-      if (mounted) {
-        setState(() {
-          _result = r.data as Map;
-          _submitting = false;
-        });
-        // Notify parent so statistics update immediately
-        widget.onAnswered();
-      }
+      final body = question.qType == 'mcq'
+          ? {'selected_index': answerState.selectedIndex}
+          : {'typed_answer': answerState.typedAnswer};
+      final response = await dioClient
+          .post(ApiEndpoints.checkQuestion(question.id), data: body);
+      answerState
+        ..result = Map<String, dynamic>.from(response.data as Map)
+        ..submitting = false;
+      // The parent owns this state, so it survives list-item recycling.
+      onAnswered();
+      if (mounted) setState(() {});
     } catch (_) {
-      if (mounted) setState(() => _submitting = false);
+      answerState.submitting = false;
+      if (mounted) setState(() {});
     }
   }
 
@@ -639,6 +749,8 @@ class _QuestionCardState extends State<_QuestionCard> {
   @override
   Widget build(BuildContext context) {
     final q = widget.question;
+    final answerState = widget.answerState;
+    final result = answerState.result;
     final questionImages = q.imageUrls;
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -684,18 +796,18 @@ class _QuestionCardState extends State<_QuestionCard> {
               ...q.options!.asMap().entries.map((e) {
                 final idx = e.key;
                 final opt = e.value;
-                final isSelected = _selectedIndex == idx;
+                final isSelected = answerState.selectedIndex == idx;
                 Color? bg;
-                if (_result != null) {
-                  final correctIdx = _result!['correct_index'];
+                if (result != null) {
+                  final correctIdx = result['correct_index'];
                   if (idx == correctIdx) bg = AppColors.success.withAlpha(30);
                   if (isSelected && idx != correctIdx) {
                     bg = AppColors.error.withAlpha(30);
                   }
                 }
                 return GestureDetector(
-                  onTap: _result == null
-                      ? () => setState(() => _selectedIndex = idx)
+                  onTap: result == null
+                      ? () => setState(() => answerState.selectedIndex = idx)
                       : null,
                   child: Container(
                     margin: const EdgeInsets.only(bottom: 8),
@@ -763,9 +875,10 @@ class _QuestionCardState extends State<_QuestionCard> {
 
             // Typed input
             if (q.qType == 'typed') ...[
-              TextField(
-                enabled: _result == null,
-                onChanged: (v) => setState(() => _typedAnswer = v),
+              TextFormField(
+                initialValue: answerState.typedAnswer,
+                enabled: result == null,
+                onChanged: (v) => setState(() => answerState.typedAnswer = v),
                 decoration: InputDecoration(
                   hintText: 'Type your answer here',
                   hintStyle: GoogleFonts.inter(
@@ -783,12 +896,12 @@ class _QuestionCardState extends State<_QuestionCard> {
             ],
 
             // Result
-            if (_result != null) ...[
+            if (result != null) ...[
               const SizedBox(height: 10),
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: (_result!['correct'] == true
+                  color: (result['correct'] == true
                           ? AppColors.success
                           : AppColors.error)
                       .withAlpha(15),
@@ -799,28 +912,25 @@ class _QuestionCardState extends State<_QuestionCard> {
                   children: [
                     Row(children: [
                       Icon(
-                          _result!['correct'] == true
+                          result['correct'] == true
                               ? Icons.check_circle
                               : Icons.cancel,
                           size: 16,
-                          color: _result!['correct'] == true
+                          color: result['correct'] == true
                               ? AppColors.success
                               : AppColors.error),
                       const SizedBox(width: 6),
-                      Text(
-                          _result!['correct'] == true
-                              ? 'Correct!'
-                              : 'Incorrect',
+                      Text(result['correct'] == true ? 'Correct!' : 'Incorrect',
                           style: GoogleFonts.inter(
                               fontWeight: FontWeight.w700,
                               fontSize: 13,
-                              color: _result!['correct'] == true
+                              color: result['correct'] == true
                                   ? AppColors.success
                                   : AppColors.error)),
                     ]),
-                    if (_result!['explanation'] != null) ...[
+                    if (result['explanation'] != null) ...[
                       const SizedBox(height: 6),
-                      Text(_plainTextFromHtml(_result!['explanation']),
+                      Text(_plainTextFromHtml(result['explanation']),
                           style: GoogleFonts.inter(
                               fontSize: 12, color: AppColors.slate700)),
                     ],
@@ -830,14 +940,14 @@ class _QuestionCardState extends State<_QuestionCard> {
             ],
 
             const SizedBox(height: 10),
-            if (_result == null)
+            if (result == null)
               Align(
                 alignment: Alignment.centerRight,
                 child: ElevatedButton(
                   onPressed: (q.qType == 'mcq'
-                              ? _selectedIndex == null
-                              : _typedAnswer.trim().isEmpty) ||
-                          _submitting
+                              ? answerState.selectedIndex == null
+                              : answerState.typedAnswer.trim().isEmpty) ||
+                          answerState.submitting
                       ? null
                       : _check,
                   style: ElevatedButton.styleFrom(
@@ -847,7 +957,7 @@ class _QuestionCardState extends State<_QuestionCard> {
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(99)),
                   ),
-                  child: _submitting
+                  child: answerState.submitting
                       ? const SizedBox(
                           width: 16,
                           height: 16,

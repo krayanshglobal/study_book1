@@ -72,7 +72,7 @@ function App() {
           <Route path="/tests/:id/live" element={<ProtectedRoute roles={["student"]} premium><LiveTest /></ProtectedRoute>} />
           <Route path="/tests/:id/result" element={<ProtectedRoute roles={["student"]} premium><Layout><TestResult /></Layout></ProtectedRoute>} />
           <Route path="/videos" element={<ProtectedRoute roles={["student"]} premium><Layout><Videos /></Layout></ProtectedRoute>} />
-          <Route path="/leaderboard" element={<ProtectedRoute roles={["student"]} premium><Layout><Leaderboard /></Layout></ProtectedRoute>} />
+          <Route path="/leaderboard" element={<ProtectedRoute roles={["student", "admin", "superadmin"]} premium><Layout><Leaderboard /></Layout></ProtectedRoute>} />
           <Route path="/my-analytics" element={<ProtectedRoute roles={["student"]} premium><Layout><MyAnalytics /></Layout></ProtectedRoute>} />
           <Route path="/daily-practice" element={<ProtectedRoute roles={["student"]} premium><Layout><DailyPractice /></Layout></ProtectedRoute>} />
           <Route path="/referrals" element={<ProtectedRoute roles={["student"]}><Layout><Referrals /></Layout></ProtectedRoute>} />

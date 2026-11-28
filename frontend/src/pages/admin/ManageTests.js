@@ -11,10 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { toast } from "sonner";
-import { Plus, Trash2, Pencil, ClipboardCheck, ClipboardList, RefreshCw, ArrowLeft, Check, ChevronsUpDown } from "lucide-react";
+import { Plus, Trash2, Pencil, ClipboardCheck, ClipboardList, RefreshCw, ArrowLeft, Search, X } from "lucide-react";
 import RichEditor from "@/components/RichEditor";
 
 const empty = {
@@ -37,46 +35,35 @@ const emptyQ = {
   allow_file_upload: false,
 };
 
-function SearchableTopicFilter({ value, topics, onChange }) {
-  const [open, setOpen] = useState(false);
-  const selectedLabel = value === "all" ? "All topics" : value;
+function TopicSearchFilter({ value, topics, onChange }) {
+  const query = value === "all" ? "" : value;
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
+    <div className="relative">
+      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+      <Input
+        value={query}
+        onChange={(event) => onChange(event.target.value || "all")}
+        placeholder="Search topics (e.g. ch)"
+        aria-label="Search topics or chapters"
+        list="test-topic-suggestions"
+        autoComplete="off"
+        className="bg-white pl-9 pr-9"
+      />
+      {query && (
+        <button
           type="button"
-          variant="outline"
-          role="combobox"
-          aria-expanded={open}
-          aria-label="Search and select a topic"
-          className="w-full justify-between bg-white px-3 font-normal"
+          aria-label="Clear topic search"
+          className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+          onClick={() => onChange("all")}
         >
-          <span className="truncate">{selectedLabel}</span>
-          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
-        <Command>
-          <CommandInput placeholder="Search topic or chapter..." />
-          <CommandList>
-            <CommandEmpty>No matching topic found.</CommandEmpty>
-            <CommandGroup>
-              <CommandItem value="all topics" onSelect={() => { onChange("all"); setOpen(false); }}>
-                <Check className={`mr-2 h-4 w-4 ${value === "all" ? "opacity-100" : "opacity-0"}`} />
-                All topics
-              </CommandItem>
-              {topics.map((topic) => (
-                <CommandItem key={topic} value={topic} onSelect={() => { onChange(topic); setOpen(false); }}>
-                  <Check className={`mr-2 h-4 w-4 ${value === topic ? "opacity-100" : "opacity-0"}`} />
-                  {topic}
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
+          <X className="h-4 w-4" />
+        </button>
+      )}
+      <datalist id="test-topic-suggestions">
+        {topics.map((topic) => <option key={topic} value={topic} />)}
+      </datalist>
+    </div>
   );
 }
 
@@ -318,13 +305,16 @@ export default function ManageTests() {
   };
 
   const today = new Date().toISOString().slice(0, 10);
-  const topics = [...new Set(questions.map((q) => q.topic).filter(Boolean))].sort();
+  const topics = [...new Set(questions.map((q) => q.topic).filter(Boolean))].sort((a, b) =>
+    a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })
+  );
+  const topicQuery = questionFilters.topic === "all" ? "" : questionFilters.topic.trim().toLowerCase();
   const visibleQuestions = questions.filter((q) => {
     const category = q.category || (q.is_published === false ? "draft" : "question_bank");
     const created = (q.created_at || "").slice(0, 10);
     const published = (q.published_at || "").slice(0, 10);
     return (questionFilters.difficulty === "all" || q.difficulty === questionFilters.difficulty)
-      && (questionFilters.topic === "all" || q.topic === questionFilters.topic)
+      && (!topicQuery || (q.topic || "").toLowerCase().includes(topicQuery))
       && (questionFilters.category === "all" || category === questionFilters.category)
       && (questionFilters.premium === "all" || (questionFilters.premium === "premium") === !!q.premium_only)
       && (!questionFilters.createdDate || created === questionFilters.createdDate)
@@ -698,7 +688,7 @@ export default function ManageTests() {
                   <div className="mt-3 space-y-3">
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-2 rounded-xl bg-slate-50 border border-slate-200 p-3">
                       <Select value={questionFilters.difficulty} onValueChange={(v) => setQuestionFilters((f) => ({ ...f, difficulty: v }))}><SelectTrigger><SelectValue placeholder="Difficulty" /></SelectTrigger><SelectContent><SelectItem value="all">All difficulties</SelectItem><SelectItem value="easy">Easy</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="hard">Hard</SelectItem></SelectContent></Select>
-                      <SearchableTopicFilter
+                      <TopicSearchFilter
                         value={questionFilters.topic}
                         topics={topics}
                         onChange={(topic) => setQuestionFilters((filters) => ({ ...filters, topic }))}
